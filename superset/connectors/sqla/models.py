@@ -2155,7 +2155,9 @@ ColumnSecurityPolicyRoles = DBTable(
     "column_security_policy_roles",
     metadata,
     Column("id", Integer, primary_key=True),
-    Column("policy_id", Integer, ForeignKey("column_security_policy.id"), nullable=False),
+    Column(
+        "policy_id", Integer, ForeignKey("column_security_policy.id"), nullable=False
+    ),
     Column("role_id", Integer, ForeignKey("ab_role.id"), nullable=False),
     UniqueConstraint("policy_id", "role_id"),
 )
@@ -2164,7 +2166,9 @@ ColumnSecurityPolicyColumns = DBTable(
     "column_security_policy_columns",
     metadata,
     Column("id", Integer, primary_key=True),
-    Column("policy_id", Integer, ForeignKey("column_security_policy.id"), nullable=False),
+    Column(
+        "policy_id", Integer, ForeignKey("column_security_policy.id"), nullable=False
+    ),
     Column("column_id", Integer, ForeignKey("table_columns.id"), nullable=False),
     UniqueConstraint("policy_id", "column_id"),
 )

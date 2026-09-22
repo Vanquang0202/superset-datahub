@@ -1371,7 +1371,9 @@ class DatasetRestApi(BaseSupersetModelRestApi):
         )
         return self.response(
             200,
-            result=dataset_.filter_column_security_metadata(dataset_schema.dump(dataset)),
+            result=dataset_.filter_column_security_metadata(
+                dataset_schema.dump(dataset)
+            ),
         )
 
     @staticmethod

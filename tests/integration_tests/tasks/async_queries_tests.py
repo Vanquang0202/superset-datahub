@@ -48,8 +48,9 @@ from tests.integration_tests.test_app import app
 )
 class TestAsyncQueries(SupersetTestCase):
     @pytest.fixture(autouse=True)
-    def grant_gamma_birth_names_access(self, load_birth_names_dashboard_with_slices):
+    def grant_gamma_birth_names_access(self, request):
         """Give the queued gamma identity access to the fixture datasource."""
+        request.getfixturevalue("load_birth_names_dashboard_with_slices")
         self.grant_role_access_to_table(self.get_table(name="birth_names"), "Gamma")
 
     @parameterized.expand(
