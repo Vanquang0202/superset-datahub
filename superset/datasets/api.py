@@ -1245,7 +1245,9 @@ class DatasetRestApi(BaseSupersetModelRestApi):
             show_model_schema = self.show_model_schema
 
         response["id"] = table.id
-        response[API_RESULT_RES_KEY] = show_model_schema.dump(table, many=False)
+        response[API_RESULT_RES_KEY] = table.filter_column_security_metadata(
+            show_model_schema.dump(table, many=False)
+        )
 
         # remove folders from resposne if `DATASET_FOLDERS` is disabled, so that it's
         # possible to inspect if the feature is supported or not
@@ -1335,7 +1337,12 @@ class DatasetRestApi(BaseSupersetModelRestApi):
             self.show_outer_default_load,
         )
         if dataset:
-            return self.response(200, result=dataset_schema.dump(dataset))
+            return self.response(
+                200,
+                result=dataset.filter_column_security_metadata(
+                    dataset_schema.dump(dataset)
+                ),
+            )
 
         # Embedded user must pass a dash ID
         if not dashboard_id and security_manager.is_guest_user():
@@ -1362,7 +1369,10 @@ class DatasetRestApi(BaseSupersetModelRestApi):
             drill_info_select_columns,
             self.show_outer_default_load,
         )
-        return self.response(200, result=dataset_schema.dump(dataset))
+        return self.response(
+            200,
+            result=dataset_.filter_column_security_metadata(dataset_schema.dump(dataset)),
+        )
 
     @staticmethod
     def render_dataset_fields(

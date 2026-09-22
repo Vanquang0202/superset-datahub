@@ -62,6 +62,7 @@ from sqlalchemy.sql.elements import ColumnElement, literal_column, TextClause
 from sqlalchemy.sql.expression import Label, Select, TextAsFrom
 from sqlalchemy.sql.selectable import Alias, TableClause
 from sqlalchemy_utils import UUIDType
+from sqlglot import exp
 
 from superset import db, is_feature_enabled
 from superset.advanced_data_type.types import AdvancedDataTypeResponse
@@ -82,12 +83,18 @@ from superset.exceptions import (
     QueryObjectValidationError,
     SupersetErrorException,
     SupersetErrorsException,
+    SupersetParseError,
     SupersetSecurityException,
     SupersetSyntaxErrorException,
 )
 from superset.extensions import feature_flag_manager
 from superset.jinja_context import BaseTemplateProcessor
-from superset.sql.parse import sanitize_clause, SQLScript, SQLStatement
+from superset.sql.parse import (
+    sanitize_clause,
+    SQLGLOT_DIALECTS,
+    SQLScript,
+    SQLStatement,
+)
 from superset.superset_typing import (
     AdhocMetric,
     Column as ColumnTyping,
@@ -2416,6 +2423,179 @@ class ExploreMixin:  # pylint: disable=too-many-public-methods
             )
         return and_(*l)
 
+    def _column_security_expression_columns(self, expression: str) -> set[str]:
+        """Resolve names in a single, source-free SQL expression or fail closed."""
+        error = _("SQL expression cannot be safely resolved for column security")
+        engine = self.database.backend
+        if (
+            not isinstance(expression, str)
+            or not expression.strip()
+            or engine not in SQLGLOT_DIALECTS
+            or any(marker in expression for marker in ("{{", "{%", "{#"))
+        ):
+            raise QueryObjectValidationError(error)
+        try:
+            statement = SQLStatement(f"SELECT {expression}", engine=engine)
+        except (SupersetParseError, ValueError) as ex:
+            raise QueryObjectValidationError(error) from ex
+        parsed = statement._parsed  # pylint: disable=protected-access
+        # A fragment must not introduce FROM, WHERE, UNION, another projection,
+        # or a nested query whose column scope differs from this dataset.
+        if (
+            not isinstance(parsed, exp.Select)
+            or len(parsed.expressions) != 1
+            or any(value for key, value in parsed.args.items() if key != "expressions")
+        ):
+            raise QueryObjectValidationError(error)
+        for node in parsed.walk():
+            if node is not parsed and isinstance(
+                node,
+                (
+                    exp.Query,
+                    exp.Table,
+                    exp.Command,
+                    exp.Anonymous,
+                    exp.Parameter,
+                    exp.Placeholder,
+                    exp.Lambda,
+                    exp.Columns,
+                ),
+            ):
+                raise QueryObjectValidationError(error)
+            if isinstance(node, exp.Star) and not isinstance(node.parent, exp.Count):
+                raise QueryObjectValidationError(error)
+            if isinstance(node, exp.Column) and (
+                node.table
+                or node.db
+                or node.catalog
+                or not isinstance(node.this, exp.Identifier)
+            ):
+                raise QueryObjectValidationError(error)
+        return {column.name for column in parsed.find_all(exp.Column)}
+
+    def _validate_column_security(
+        self,
+        references: list[Any],
+        metric_references: list[Any] | None = None,
+        filter_references: list[Any] | None = None,
+        orderby_references: list[Any] | None = None,
+        sql_expressions: list[str] | None = None,
+        having: str | None = None,
+    ) -> None:
+        """Validate structured references and their SQL/calculated dependencies."""
+        from superset import security_manager
+        from superset.connectors.sqla.models import SqlaTable
+
+        # ExploreMixin is also used by SQL Lab query objects.
+        if not isinstance(self, SqlaTable):
+            return
+        allowed_columns = security_manager.get_allowed_columns(self)
+        if allowed_columns is None:
+            return
+
+        columns = {column.column_name: column for column in self.columns}
+        metrics = {metric.metric_name: metric for metric in self.metrics}
+        aliases = {
+            utils.get_metric_name(metric): metric
+            for metric in metric_references or []
+            if metric is not None
+        }
+        visiting: set[tuple[str, str]] = set()
+        validated: set[tuple[str, str]] = set()
+
+        def unresolved() -> None:
+            raise QueryObjectValidationError(
+                _("SQL expression cannot be safely resolved for column security")
+            )
+
+        def validate_expression(expression: str, allow_aliases: bool = False) -> None:
+            for name in self._column_security_expression_columns(expression):
+                if name in columns:
+                    validate_column(name)
+                    # Raw SQL does not inline TableColumn.expression. A name
+                    # matching a calculated column could instead bind to a
+                    # physical field with that name. Inspect dependencies, but
+                    # do not authorize this ambiguous SQL-level reference.
+                    if columns[name].expression:
+                        unresolved()
+                elif allow_aliases and name in aliases:
+                    validate_metric_reference(aliases[name])
+                else:
+                    # Unknown identifiers may refer to physical columns absent
+                    # from metadata. Never treat them as harmless constants.
+                    unresolved()
+
+        def validate_dependency(kind: str, name: str, expression: str) -> None:
+            key = (kind, name)
+            if key in visiting:
+                unresolved()
+            if key not in validated:
+                visiting.add(key)
+                validate_expression(expression)
+                visiting.remove(key)
+                validated.add(key)
+
+        def validate_column(name: str) -> None:
+            if name not in allowed_columns:
+                raise QueryObjectValidationError(
+                    _("Column %(column)s is not accessible", column=name),
+                    error_type=SupersetErrorType.COLUMN_SECURITY_ACCESS_ERROR,
+                )
+            if expression := columns[name].expression:
+                validate_dependency("column", name, expression)
+
+        def validate_metric(name: str) -> None:
+            validate_dependency("metric", name, metrics[name].expression)
+
+        def validate_reference(reference: Any) -> None:
+            if reference is None or reference == DTTM_ALIAS:
+                return
+            if isinstance(reference, dict):
+                if reference.get("expressionType") == "SIMPLE":
+                    reference = (reference.get("column") or {}).get("column_name")
+                else:
+                    reference = reference.get("sqlExpression")
+            if not isinstance(reference, str) or not reference.strip():
+                unresolved()
+            elif reference in columns:
+                validate_column(reference)
+            else:
+                validate_expression(reference)
+
+        def validate_metric_reference(metric: Any) -> None:
+            if isinstance(metric, str) and metric in metrics:
+                validate_metric(metric)
+            elif isinstance(metric, dict) and metric.get("expressionType") == "SQL":
+                # Unlike adhoc columns, SQL metrics never resolve an exact
+                # column-name match through TableColumn.get_sqla_col().
+                validate_expression(metric.get("sqlExpression") or "")
+            else:
+                validate_reference(metric)
+
+        for reference in references:
+            validate_reference(reference)
+        for reference in filter_references or []:
+            if isinstance(reference, str) and reference not in columns:
+                validate_metric_reference(reference)
+            else:
+                validate_reference(reference)
+        for metric in metric_references or []:
+            validate_metric_reference(metric)
+        for reference in orderby_references or []:
+            if isinstance(reference, str) and reference in aliases:
+                validate_metric_reference(aliases[reference])
+            elif isinstance(reference, str) and reference in metrics:
+                validate_metric(reference)
+            elif isinstance(reference, dict):
+                validate_metric_reference(reference)
+            else:
+                validate_reference(reference)
+        for expression in sql_expressions or []:
+            if expression:
+                validate_expression(expression)
+        if having:
+            validate_expression(having, allow_aliases=True)
+
     def values_for_column(  # pylint: disable=too-many-locals
         self,
         column_name: str,
@@ -2429,6 +2609,9 @@ class ExploreMixin:  # pylint: disable=too-many-public-methods
             self.database.db_engine_spec.denormalize_name(db_dialect, column_name)
             if denormalize_column
             else column_name
+        )
+        self._validate_column_security(
+            [column_name_], sql_expressions=[self.fetch_values_predicate or ""]
         )
         cols = {col.column_name: col for col in self.columns}
         target_col = cols[column_name_]
@@ -2656,10 +2839,37 @@ class ExploreMixin:  # pylint: disable=too-many-public-methods
         time_shift: Optional[str] = None,
     ) -> SqlaQuery:
         """Querying any sqla table from this common interface"""
+        requested_granularity = granularity
         if granularity not in self.dttm_cols and granularity is not None:
             granularity = self.main_dttm_col
 
+        column_references: list[Any] = [
+            *(columns or []),
+            *(groupby or []),
+            *(series_columns or []),
+            requested_granularity if requested_granularity in self.column_names else None,
+            granularity,
+        ]
+        if granularity and self.always_filter_main_dttm:
+            column_references.append(self.main_dttm_col)
         extras = extras or {}
+        self._validate_column_security(
+            column_references,
+            metric_references=metrics,
+            filter_references=[clause.get("col") for clause in filter or []],
+            orderby_references=[
+                *(column for column, _ascending in orderby or []),
+                series_limit_metric,
+                timeseries_limit_metric,
+            ],
+            sql_expressions=[
+                extras.get("where") or "",
+                (self.fetch_values_predicate or "")
+                if apply_fetch_values_predicate
+                else "",
+            ],
+            having=extras.get("having"),
+        )
         time_grain = extras.get("time_grain_sqla")
 
         # DB-specifc quoting for identifiers

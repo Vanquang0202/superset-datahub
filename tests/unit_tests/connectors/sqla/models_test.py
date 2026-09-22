@@ -31,6 +31,140 @@ from superset.sql.parse import Table
 from superset.superset_typing import QueryObjectDict
 
 
+@pytest.mark.parametrize(
+    "first_id, first_columns, second_id, second_columns, equal",
+    [
+        (
+            3,
+            ["don_vi", "khu_vuc", "trang_thai"],
+            3,
+            ["trang_thai", "don_vi", "khu_vuc"],
+            True,
+        ),
+        (3, ["don_vi"], 3, ["don_vi", "muc_tieu"], False),
+        (3, ["don_vi"], 4, ["don_vi"], False),
+        (3, ["don_vi"], 3, None, False),
+        (3, [], 3, None, False),
+        (3, [], 3, [], True),
+        (3, None, 3, None, True),
+    ],
+)
+def test_column_security_cache_fingerprint(
+    mocker: MockerFixture,
+    first_id: int,
+    first_columns: list[str] | None,
+    second_id: int,
+    second_columns: list[str] | None,
+    equal: bool,
+) -> None:
+    """Only dataset identity and effective access determine the CLS fingerprint."""
+    resolver = mocker.patch(
+        "superset.connectors.sqla.models.security_manager.get_allowed_columns"
+    )
+    resolver.return_value = None if first_columns is None else set(first_columns)
+    first = SqlaTable(id=first_id).get_column_security_cache_key()
+    resolver.return_value = None if second_columns is None else set(second_columns)
+    second = SqlaTable(id=second_id).get_column_security_cache_key()
+    assert (first == second) is equal
+    if first is not None:
+        assert first.startswith("cls-v1:")
+        assert len(first) == len("cls-v1:") + 64
+        assert all(name not in first for name in first_columns or [])
+
+
+def test_column_security_cache_equivalent_role_unions(mocker: MockerFixture) -> None:
+    """Different role combinations with the same resolved union share a key."""
+    table = SqlaTable(id=3)
+    role_columns = {
+        11: {"don_vi", "khu_vuc", "trang_thai"},
+        12: {"don_vi"},
+        13: {"khu_vuc", "trang_thai"},
+    }
+    resolver = mocker.patch(
+        "superset.connectors.sqla.models.security_manager.get_allowed_columns"
+    )
+    resolver.return_value = role_columns[11]
+    first = table.get_column_security_cache_key()
+    resolver.return_value = role_columns[12] | role_columns[13]
+    assert table.get_column_security_cache_key() == first
+
+
+def test_column_security_query_cache_isolation(mocker: MockerFixture) -> None:
+    """Real chart keys isolate broader results without modifying query input."""
+    from copy import deepcopy
+
+    from superset.common.query_context_processor import QueryContextProcessor
+    from superset.common.query_object import QueryObject
+
+    table = SqlaTable(id=3, table_name="superset_bi_demo")
+    mocker.patch.object(table, "has_extra_cache_key_calls", return_value=False)
+    resolver = mocker.patch(
+        "superset.connectors.sqla.models.security_manager.get_allowed_columns",
+        return_value=None,
+    )
+    mocker.patch(
+        "superset.common.query_context_processor.security_manager.get_rls_cache_key",
+        return_value=[],
+    )
+    processor = QueryContextProcessor(mocker.Mock(datasource=table))
+    query = QueryObject(columns=["don_vi"], is_timeseries=False)
+    original = deepcopy(query.to_dict())
+    unrestricted = processor.query_cache_key(query)
+    assert table.get_extra_cache_keys(original) == []
+    assert unrestricted == query.cache_key(
+        datasource=table.uid, extra_cache_keys=[], rls=[], changed_on=table.changed_on
+    )
+    cache = {unrestricted: "unrestricted result"}
+
+    resolver.return_value = {"don_vi", "khu_vuc", "trang_thai"}
+    restricted = processor.query_cache_key(query)
+    assert restricted not in cache
+    cache[restricted] = "restricted result"
+    assert cache[processor.query_cache_key(query)] == "restricted result"
+
+    resolver.return_value = {"don_vi"}
+    narrower = processor.query_cache_key(query)
+    assert narrower not in cache
+    resolver.return_value = set()
+    deny_all = processor.query_cache_key(query)
+    assert len({unrestricted, restricted, narrower, deny_all}) == 4
+    assert query.to_dict() == original
+
+
+@pytest.mark.parametrize(
+    "allowed, skip", [(None, False), ({"don_vi"}, True), (set(), True)]
+)
+def test_column_security_legacy_response_cache(
+    mocker: MockerFixture, allowed: set[str] | None, skip: bool
+) -> None:
+    """Restricted requests cannot read the legacy shared HTTP response cache."""
+    from flask import Flask
+
+    from superset.utils.cache import etag_cache
+    from superset.views.core import Superset
+
+    table = SqlaTable(id=3)
+    mocker.patch("superset.views.core.get_form_data", return_value=({}, None))
+    mocker.patch("superset.views.core.get_datasource_info", return_value=(3, "table"))
+    mocker.patch("superset.views.core.DatasourceDAO.get_datasource", return_value=table)
+    mocker.patch(
+        "superset.views.core.security_manager.get_allowed_columns", return_value=allowed
+    )
+    assert Superset._skip_column_security_response_cache(mocker.Mock()) is skip
+    if skip:
+        cache = mocker.Mock()
+        cache.get.return_value = "broader cached HTTP response"
+        with Flask(__name__).test_request_context(method="GET"):
+            response = etag_cache(
+                cache=cache,
+                max_age=60,
+                skip=Superset._skip_column_security_response_cache,
+            )(lambda self: "restricted response")(mocker.Mock())
+        assert response == "restricted response"
+        cache.get.assert_not_called()
+        cache.set.assert_not_called()
+
+
 def test_query_bubbles_errors(mocker: MockerFixture) -> None:
     """
     Test that the `query` method bubbles exceptions correctly.
@@ -946,3 +1080,85 @@ def test_data_for_slices_handles_missing_datasource(mocker: MockerFixture) -> No
     assert "columns" in result
     assert "metrics" in result
     assert "verbose_map" in result
+
+
+@pytest.mark.parametrize("dashboard_metadata", [False, True])
+@pytest.mark.parametrize(
+    "allowed_columns",
+    [None, {"don_vi", "khu_vuc", "trang_thai"}, set()],
+    ids=["no-policy", "allowed-columns", "empty-policy"],
+)
+def test_column_security_metadata(
+    mocker: MockerFixture,
+    allowed_columns: set[str] | None,
+    dashboard_metadata: bool,
+) -> None:
+    """Filter serialized metadata without changing columns used by queries."""
+    names = [
+        "id",
+        "ho_ten",
+        "cccd",
+        "sdt",
+        "dia_chi",
+        "don_vi",
+        "khu_vuc",
+        "trang_thai",
+        "created_at",
+    ]
+    table = SqlaTable(
+        id=3,
+        table_name="superset_bi_demo",
+        database=mocker.MagicMock(),
+        main_dttm_col="created_at",
+        currency_code_column="cccd",
+        columns=[
+            TableColumn(
+                column_name=name,
+                verbose_name=f"Label {name}",
+                type="VARCHAR",
+                filterable=True,
+                is_dttm=name == "created_at",
+            )
+            for name in names
+        ],
+        metrics=[],
+    )
+    original_columns = list(table.columns)
+    resolver = mocker.patch(
+        "superset.connectors.sqla.models.security_manager.get_allowed_columns",
+        return_value=allowed_columns,
+    )
+    chart = mocker.Mock(form_data={})
+    chart.get_query_context.return_value = mocker.Mock(
+        queries=[mocker.Mock(columns=names)]
+    )
+
+    data = table.data_for_slices([chart]) if dashboard_metadata else table.data
+
+    expected = (
+        names
+        if allowed_columns is None
+        else [name for name in names if name in allowed_columns]
+    )
+    assert [column["column_name"] for column in data["columns"]] == expected
+    assert set(data["verbose_map"]) == {"__timestamp", *expected}
+    assert table.filterable_column_names == sorted(expected)
+    assert len(data["order_by_choices"]) == 2 * len(expected)
+    if dashboard_metadata:
+        expected_names = set(expected)
+        if allowed_columns is None:
+            expected_names.update(f"Label {name}" for name in names)
+        assert data["column_names"] == expected_names
+    assert data["main_dttm_col"] == ("created_at" if allowed_columns is None else None)
+    assert data["currency_code_column"] == ("cccd" if allowed_columns is None else None)
+    assert data["granularity_sqla"] == (
+        [("created_at", "created_at")] if allowed_columns is None else []
+    )
+    assert list(table.columns) == original_columns
+    assert table.column_names == sorted(names)
+    assert table.main_dttm_col == "created_at"
+    resolver.assert_called_with(table)
+
+    # Serializing for a different user must not retain the previous restriction.
+    resolver.return_value = None
+    assert [column["column_name"] for column in table.data["columns"]] == names

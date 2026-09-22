@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import builtins
+import hashlib
 import logging
 from collections import defaultdict
 from collections.abc import Hashable
@@ -29,7 +30,7 @@ import pandas as pd
 import sqlalchemy as sa
 from flask import current_app
 from flask_appbuilder import Model
-from flask_appbuilder.security.sqla.models import User
+from flask_appbuilder.security.sqla.models import Role, User
 from flask_babel import gettext as __, lazy_gettext as _
 from jinja2.exceptions import TemplateError
 from markupsafe import escape, Markup
@@ -1451,6 +1452,70 @@ class SqlaTable(
     def time_grain_sqla(self) -> list[tuple[Any, Any]]:
         return [(g.duration, g.name) for g in self.database.grains() or []]
 
+    def filter_column_security_metadata(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Filter serialized column metadata without changing the dataset model."""
+        allowed_columns = security_manager.get_allowed_columns(self)
+        if allowed_columns is None:
+            return data
+
+        data = dict(data)
+        if "columns" in data:
+            data["columns"] = [
+                column
+                for column in data["columns"]
+                if column.get("column_name") in allowed_columns
+            ]
+        if "column_names" in data:
+            data["column_names"] = set(data["column_names"]) & allowed_columns
+        if "verbose_map" in data:
+            forbidden_columns = {
+                column.column_name
+                for column in self.columns
+                if column.column_name not in allowed_columns
+            }
+            data["verbose_map"] = {
+                name: label
+                for name, label in data["verbose_map"].items()
+                if name not in forbidden_columns
+            }
+        if "order_by_choices" in data:
+            data["order_by_choices"] = [
+                choice
+                for choice in data["order_by_choices"]
+                if json.loads(choice[0])[0] in allowed_columns
+            ]
+        if "granularity_sqla" in data:
+            data["granularity_sqla"] = [
+                choice
+                for choice in data["granularity_sqla"]
+                if choice[0] in allowed_columns
+            ]
+        for field_name in ("main_dttm_col", "currency_code_column"):
+            if field_name in data and data[field_name] not in allowed_columns:
+                data[field_name] = None
+        if "column_types" in data and "columns" in data:
+            data["column_types"] = list(
+                {
+                    column["type_generic"]
+                    for column in data["columns"]
+                    if column.get("type_generic") is not None
+                }
+            )
+        return data
+
+    @property
+    def filterable_column_names(self) -> list[str]:
+        """Return filterable column names visible to the current user."""
+        column_names = super().filterable_column_names
+        allowed_columns = security_manager.get_allowed_columns(self)
+        if allowed_columns is None:
+            return column_names
+        return [name for name in column_names if name in allowed_columns]
+
+    def data_for_slices(self, slices: list[Slice]) -> dict[str, Any]:
+        """Filter dashboard metadata after the base serializer adds column names."""
+        return self.filter_column_security_metadata(super().data_for_slices(slices))
+
     @property
     def data(self) -> ExplorableData:
         data_ = super().data
@@ -1467,7 +1532,10 @@ class SqlaTable(
             data_["owners"] = self.owners_data
             data_["always_filter_main_dttm"] = self.always_filter_main_dttm
             data_["normalize_columns"] = self.normalize_columns
-        return data_
+        return cast(
+            ExplorableData,
+            self.filter_column_security_metadata(cast(dict[str, Any], data_)),
+        )
 
     @property
     def extra_dict(self) -> dict[str, Any]:
@@ -1960,6 +2028,22 @@ class SqlaTable(
                 return True
         return False
 
+    def get_column_security_cache_key(self) -> str | None:
+        """Fingerprint effective column access without exposing policy details.
+
+        No policy preserves the existing unrestricted cache namespace. An empty
+        allowed set has its own restricted namespace, distinct from no policy.
+        """
+        allowed_columns = security_manager.get_allowed_columns(self)
+        if allowed_columns is None:
+            return None
+        payload = json.dumps(
+            {"dataset_id": self.id, "allowed_columns": sorted(allowed_columns)},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return "cls-v1:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
     def get_extra_cache_keys(self, query_obj: QueryObjectDict) -> list[Hashable]:
         """
         The cache key of a SqlaTable needs to consider any keys added by the parent
@@ -1967,6 +2051,9 @@ class SqlaTable(
 
         For virtual datasets, RLS predicates are included in the cache key to ensure
         users with different RLS rules get different cached results.
+
+        Restricted column access adds a fingerprint shared by users with the same
+        effective allowed columns, isolating them from unrestricted cached results.
 
         :param query_obj: query object to analyze
         :return: The extra cache keys
@@ -1994,7 +2081,10 @@ class SqlaTable(
             # Add each predicate as a separate cache key component
             extra_cache_keys.extend(rls_predicates)
 
-        return list(set(extra_cache_keys))
+        extra_cache_keys = list(set(extra_cache_keys))
+        if cls_cache_key := self.get_column_security_cache_key():
+            extra_cache_keys.append(cls_cache_key)
+        return extra_cache_keys
 
     @property
     def quote_identifier(self) -> Callable[[str], str]:
@@ -2060,6 +2150,48 @@ class SqlaTable(
 sa.event.listen(SqlaTable, "before_update", SqlaTable.before_update)
 sa.event.listen(SqlaTable, "after_insert", SqlaTable.after_insert)
 sa.event.listen(SqlaTable, "after_delete", SqlaTable.after_delete)
+
+ColumnSecurityPolicyRoles = DBTable(
+    "column_security_policy_roles",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("policy_id", Integer, ForeignKey("column_security_policy.id"), nullable=False),
+    Column("role_id", Integer, ForeignKey("ab_role.id"), nullable=False),
+    UniqueConstraint("policy_id", "role_id"),
+)
+
+ColumnSecurityPolicyColumns = DBTable(
+    "column_security_policy_columns",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("policy_id", Integer, ForeignKey("column_security_policy.id"), nullable=False),
+    Column("column_id", Integer, ForeignKey("table_columns.id"), nullable=False),
+    UniqueConstraint("policy_id", "column_id"),
+)
+
+
+class ColumnSecurityPolicy(Model):
+    """Column access policy associated with a dataset, roles, and columns."""
+
+    __tablename__ = "column_security_policy"
+    id: Mapped[int] = Column(Integer, primary_key=True)
+    name: Mapped[str] = Column(String(255), unique=True, nullable=False)
+    table_id: Mapped[int] = Column(Integer, ForeignKey("tables.id"), nullable=False)
+    description: Mapped[str | None] = Column(Text)
+    enabled: Mapped[bool] = Column(
+        Boolean, nullable=False, default=True, server_default=sa.true()
+    )
+
+    roles: Mapped[list[Role]] = relationship(
+        security_manager.role_model,
+        secondary=ColumnSecurityPolicyRoles,
+    )
+    columns: Mapped[list[TableColumn]] = relationship(
+        TableColumn,
+        secondary=ColumnSecurityPolicyColumns,
+    )
+    table: Mapped[SqlaTable] = relationship(SqlaTable)
+
 
 RLSFilterRoles = DBTable(
     "rls_filter_roles",

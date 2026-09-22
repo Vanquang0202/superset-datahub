@@ -57,7 +57,8 @@ class ChartDataCommand(BaseCommand):
                 and self._query_context.result_type != ChartDataResultType.QUERY
             ):
                 raise ChartDataQueryFailedError(
-                    _("Error: %(error)s", error=query["error"])
+                    _("Error: %(error)s", error=query["error"]),
+                    error_type=query.get("error_type"),
                 )
 
         return_value = {

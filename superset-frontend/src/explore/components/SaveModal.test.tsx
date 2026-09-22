@@ -823,3 +823,115 @@ test('addChartToDashboardTab handles empty position_json', async () => {
     mockNanoid.mockRestore();
   }
 });
+
+const saveChartState = {
+  ...initialState,
+  explore: {
+    ...initialState.explore,
+    datasource: { type: 'table', name: 'CLS dataset' },
+  },
+};
+
+test.each(['createSlice', 'updateSlice'] as const)(
+  '%s 403 shows a readable permission toast and resets loading',
+  async method => {
+    sessionStorage.clear();
+    const addDangerToast = jest.fn();
+    const save = jest.fn().mockRejectedValue(
+      new Response(JSON.stringify({ message: 'Forbidden' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    const { getByRole, queryByText } = setup(
+      {
+        ...defaultProps,
+        sliceName: 'CLS chart',
+        addDangerToast,
+        actions: {
+          setFormData: jest.fn(),
+          getSliceDashboards: jest.fn().mockResolvedValue([]),
+          [method]: save,
+        },
+      },
+      mockStore(saveChartState),
+    );
+    if (method === 'createSlice') {
+      fireEvent.click(getByRole('radio', { name: 'Save as...' }));
+    }
+    fireEvent.click(getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(addDangerToast).toHaveBeenCalledWith(
+        'You do not have permission to save or edit this chart.',
+      ),
+    );
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(getByRole('button', { name: 'Save' })).toBeEnabled();
+    expect(getByRole('dialog', { name: 'Save chart' })).toBeInTheDocument();
+    expect(queryByText('[object Response]')).not.toBeInTheDocument();
+  },
+);
+
+test('save failure preserves readable backend diagnostics', async () => {
+  sessionStorage.clear();
+  const addDangerToast = jest.fn();
+  const { getByRole } = setup(
+    {
+      ...defaultProps,
+      sliceName: 'CLS chart',
+      addDangerToast,
+      actions: {
+        setFormData: jest.fn(),
+        getSliceDashboards: jest.fn().mockResolvedValue([]),
+        updateSlice: jest.fn().mockRejectedValue(
+          new Response(JSON.stringify({ message: 'Chart name is invalid' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        ),
+      },
+    },
+    mockStore(saveChartState),
+  );
+  fireEvent.click(getByRole('button', { name: 'Save' }));
+  await waitFor(() =>
+    expect(addDangerToast).toHaveBeenCalledWith(
+      'Unable to save chart: Chart name is invalid',
+    ),
+  );
+  expect(getByRole('button', { name: 'Save' })).toBeEnabled();
+});
+
+test.each(['createSlice', 'updateSlice'] as const)(
+  '%s success does not show an error toast',
+  async method => {
+    sessionStorage.clear();
+    const addDangerToast = jest.fn();
+    const save = jest.fn().mockResolvedValue({ id: 42 });
+    const store = mockStore(saveChartState);
+    const { getByRole } = setup(
+      {
+        ...defaultProps,
+        sliceName: 'CLS chart',
+        addDangerToast,
+        actions: {
+          setFormData: jest.fn(),
+          getSliceDashboards: jest.fn().mockResolvedValue([]),
+          [method]: save,
+        },
+      },
+      store,
+    );
+    if (method === 'createSlice') {
+      fireEvent.click(getByRole('radio', { name: 'Save as...' }));
+    }
+    fireEvent.click(getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(store.getActions()).toContainEqual(
+        saveModalActions.setSaveChartModalVisibility(false),
+      ),
+    );
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(addDangerToast).not.toHaveBeenCalled();
+  },
+);

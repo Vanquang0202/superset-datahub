@@ -822,8 +822,11 @@ export function exploreJSON(
             return dispatch(chartUpdateStopped(key as string | number));
           }
 
-          if (isFeatureEnabled(FeatureFlag.GlobalAsyncQueries)) {
-            // In async mode we just pass the raw error response through
+          if (
+            isFeatureEnabled(FeatureFlag.GlobalAsyncQueries) &&
+            !(response instanceof Response)
+          ) {
+            // Async job failures already contain parsed error details.
             return dispatch(
               chartUpdateFailed(
                 [response as JsonObject],
