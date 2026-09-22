@@ -114,7 +114,7 @@ jobs:
           ignore-unfixed: true
       - name: Upload Trivy scan results to GitHub Security tab
         if: github.event_name == 'push' && github.ref == 'refs/heads/master' && (steps.check.outputs.python || steps.check.outputs.frontend || steps.check.outputs.docker) && matrix.build_preset == 'lean'
-        uses: github/codeql-action/upload-sarif@1b168cd39490f61582a9beae412bb7057a6b2c4e # v4.31.8
+        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
         with:
           sarif_file: 'trivy-results.sarif'
 
