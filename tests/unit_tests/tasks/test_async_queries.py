@@ -236,8 +236,8 @@ def test_async_rechecks_access(mocker: MockerFixture, legacy: bool) -> None:
     run = mocker.patch(
         "superset.commands.chart.data.get_data_command.ChartDataCommand.run"
     )
+    task = load_explore_json_into_cache if legacy else load_chart_data_into_cache
     with pytest.raises(SupersetException, match="access revoked"):
-        task = load_explore_json_into_cache if legacy else load_chart_data_into_cache
         task.run({"user_id": 11}, {})
     viz.get_payload.assert_not_called()
     run.assert_not_called()
@@ -267,8 +267,12 @@ def test_async_public_and_guest_identity(mocker: MockerFixture) -> None:
     assert "guest_token" not in metadata
 
 
-@mock.patch("superset.tasks.async_queries.security_manager")
-@mock.patch("superset.tasks.async_queries.async_query_manager")
+@mock.patch(
+    "superset.tasks.async_queries.security_manager", new_callable=mock.MagicMock
+)
+@mock.patch(
+    "superset.tasks.async_queries.async_query_manager", new_callable=mock.MagicMock
+)
 @mock.patch("superset.tasks.async_queries.ChartDataQueryContextSchema")
 def test_load_chart_data_into_cache_with_error(
     mock_query_context_schema_cls, mock_async_query_manager, mock_security_manager
@@ -300,8 +304,12 @@ def test_load_chart_data_into_cache_with_error(
     )
 
 
-@mock.patch("superset.tasks.async_queries.security_manager")
-@mock.patch("superset.tasks.async_queries.async_query_manager")
+@mock.patch(
+    "superset.tasks.async_queries.security_manager", new_callable=mock.MagicMock
+)
+@mock.patch(
+    "superset.tasks.async_queries.async_query_manager", new_callable=mock.MagicMock
+)
 @mock.patch("superset.tasks.async_queries.ChartDataQueryContextSchema")
 def test_load_chart_data_into_cache_with_superset_error_exception(
     mock_query_context_schema_cls, mock_async_query_manager, mock_security_manager
@@ -343,8 +351,12 @@ def test_load_chart_data_into_cache_with_superset_error_exception(
     assert errors[0]["extra"]["datasource"] == "my_table"
 
 
-@mock.patch("superset.tasks.async_queries.security_manager")
-@mock.patch("superset.tasks.async_queries.async_query_manager")
+@mock.patch(
+    "superset.tasks.async_queries.security_manager", new_callable=mock.MagicMock
+)
+@mock.patch(
+    "superset.tasks.async_queries.async_query_manager", new_callable=mock.MagicMock
+)
 @mock.patch("superset.tasks.async_queries.ChartDataQueryContextSchema")
 def test_load_chart_data_into_cache_with_superset_errors_exception(
     mock_query_context_schema_cls, mock_async_query_manager, mock_security_manager

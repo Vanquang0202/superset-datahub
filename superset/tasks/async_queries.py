@@ -49,6 +49,7 @@ from superset.views.utils import get_datasource_info, get_viz
 
 if TYPE_CHECKING:
     from superset.common.query_context import QueryContext
+    from superset.security.guest_token import GuestToken
 
 logger = logging.getLogger(__name__)
 query_timeout = current_app.config[
@@ -92,7 +93,9 @@ def _load_user_from_job_metadata(job_metadata: dict[str, Any]) -> User:
             or guest_token.get("exp", 0) <= time.time()
         ):
             raise SupersetException("Async query guest authorization has expired")
-        user = security_manager.get_guest_user_from_token(guest_token)
+        user = security_manager.get_guest_user_from_token(
+            cast("GuestToken", guest_token)
+        )
     else:
         if "user_id" not in job_metadata:
             raise SupersetException("Async query identity is missing")
@@ -216,9 +219,7 @@ def load_explore_json_into_cache(  # pylint: disable=too-many-locals
                 result_url=result_url,
             )
     except SoftTimeLimitExceeded as ex:
-        logger.warning(
-            "A timeout occurred while loading explore json, error: %s", ex
-        )
+        logger.warning("A timeout occurred while loading explore json, error: %s", ex)
         raise
     except Exception as ex:
         if isinstance(ex, SupersetVizException):

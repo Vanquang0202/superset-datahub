@@ -62,7 +62,6 @@ from sqlalchemy.sql.elements import ColumnElement, literal_column, TextClause
 from sqlalchemy.sql.expression import Label, Select, TextAsFrom
 from sqlalchemy.sql.selectable import Alias, TableClause
 from sqlalchemy_utils import UUIDType
-from sqlglot import exp
 
 from superset import db, is_feature_enabled
 from superset.advanced_data_type.types import AdvancedDataTypeResponse
@@ -89,9 +88,9 @@ from superset.exceptions import (
 )
 from superset.extensions import feature_flag_manager
 from superset.jinja_context import BaseTemplateProcessor
+from superset.sql.column_security import get_column_security_columns
 from superset.sql.parse import (
     sanitize_clause,
-    SQLGLOT_DIALECTS,
     SQLScript,
     SQLStatement,
 )
@@ -797,6 +796,123 @@ class SqlaQuery(NamedTuple):
     labels_expected: list[str]
     prequeries: list[str]
     sqla_query: Select
+
+
+class _ColumnSecurityValidator:
+    """Validate one query's column dependencies with isolated recursion state."""
+
+    def __init__(
+        self,
+        datasource: ExploreMixin,
+        allowed_columns: set[str],
+        metric_references: list[Any] | None,
+    ) -> None:
+        """Capture metadata and aliases without modifying the datasource."""
+        self.datasource = datasource
+        self.allowed_columns = allowed_columns
+        self.columns = {column.column_name: column for column in datasource.columns}
+        self.metrics = {metric.metric_name: metric for metric in datasource.metrics}
+        self.aliases = {
+            utils.get_metric_name(metric): metric
+            for metric in metric_references or []
+            if metric is not None
+        }
+        self.visiting: set[tuple[str, str]] = set()
+        self.validated: set[tuple[str, str]] = set()
+
+    def unresolved(self) -> None:
+        """Reject expressions whose dependencies cannot be established."""
+        raise QueryObjectValidationError(
+            _("SQL expression cannot be safely resolved for column security")
+        )
+
+    def validate_expression(self, expression: str, allow_aliases: bool = False) -> None:
+        """Validate every identifier, including calculated-column ambiguity."""
+        for name in self.datasource._column_security_expression_columns(expression):
+            if name in self.columns:
+                self.validate_column(name)
+                # Raw SQL does not inline TableColumn.expression. A name
+                # matching a calculated column could instead bind to a
+                # physical field with that name. Inspect dependencies, but
+                # do not authorize this ambiguous SQL-level reference.
+                if self.columns[name].expression:
+                    self.unresolved()
+            elif allow_aliases and name in self.aliases:
+                self.validate_metric_reference(self.aliases[name])
+            else:
+                # Unknown identifiers may refer to physical columns absent
+                # from metadata. Never treat them as harmless constants.
+                self.unresolved()
+
+    def validate_dependency(self, kind: str, name: str, expression: str) -> None:
+        """Detect dependency cycles and cache successful validation."""
+        key = (kind, name)
+        if key in self.visiting:
+            self.unresolved()
+        if key not in self.validated:
+            self.visiting.add(key)
+            self.validate_expression(expression)
+            self.visiting.remove(key)
+            self.validated.add(key)
+
+    def validate_column(self, name: str) -> None:
+        """Check policy membership before inspecting calculated dependencies."""
+        if name not in self.allowed_columns:
+            raise QueryObjectValidationError(
+                _("Column %(column)s is not accessible", column=name),
+                error_type=SupersetErrorType.COLUMN_SECURITY_ACCESS_ERROR,
+            )
+        if expression := self.columns[name].expression:
+            self.validate_dependency("column", name, expression)
+
+    def validate_metric(self, name: str) -> None:
+        """Validate the dependencies of a saved metric."""
+        self.validate_dependency("metric", name, self.metrics[name].expression)
+
+    def validate_reference(self, reference: Any) -> None:
+        """Resolve physical, adhoc, and SQL column references."""
+        if reference is None or reference == DTTM_ALIAS:
+            return
+        if isinstance(reference, dict):
+            if reference.get("expressionType") == "SIMPLE":
+                reference = (reference.get("column") or {}).get("column_name")
+            else:
+                reference = reference.get("sqlExpression")
+        if not isinstance(reference, str) or not reference.strip():
+            self.unresolved()
+        elif reference in self.columns:
+            self.validate_column(reference)
+        else:
+            self.validate_expression(reference)
+
+    def validate_metric_reference(self, metric: Any) -> None:
+        """Resolve saved metrics and preserve raw SQL metric semantics."""
+        if isinstance(metric, str) and metric in self.metrics:
+            self.validate_metric(metric)
+        elif isinstance(metric, dict) and metric.get("expressionType") == "SQL":
+            # Unlike adhoc columns, SQL metrics never resolve an exact
+            # column-name match through TableColumn.get_sqla_col().
+            self.validate_expression(metric.get("sqlExpression") or "")
+        else:
+            self.validate_reference(metric)
+
+    def validate_filter(self, reference: Any) -> None:
+        """Resolve filter references as columns or metrics."""
+        if isinstance(reference, str) and reference not in self.columns:
+            self.validate_metric_reference(reference)
+        else:
+            self.validate_reference(reference)
+
+    def validate_orderby(self, reference: Any) -> None:
+        """Resolve ordering aliases without bypassing their metric dependencies."""
+        if isinstance(reference, str) and reference in self.aliases:
+            self.validate_metric_reference(self.aliases[reference])
+        elif isinstance(reference, str) and reference in self.metrics:
+            self.validate_metric(reference)
+        elif isinstance(reference, dict):
+            self.validate_metric_reference(reference)
+        else:
+            self.validate_reference(reference)
 
 
 class ExploreMixin:  # pylint: disable=too-many-public-methods
@@ -2425,53 +2541,12 @@ class ExploreMixin:  # pylint: disable=too-many-public-methods
 
     def _column_security_expression_columns(self, expression: str) -> set[str]:
         """Resolve names in a single, source-free SQL expression or fail closed."""
-        error = _("SQL expression cannot be safely resolved for column security")
-        engine = self.database.backend
-        if (
-            not isinstance(expression, str)
-            or not expression.strip()
-            or engine not in SQLGLOT_DIALECTS
-            or any(marker in expression for marker in ("{{", "{%", "{#"))
-        ):
-            raise QueryObjectValidationError(error)
         try:
-            statement = SQLStatement(f"SELECT {expression}", engine=engine)
+            return get_column_security_columns(expression, self.database.backend)
         except (SupersetParseError, ValueError) as ex:
-            raise QueryObjectValidationError(error) from ex
-        parsed = statement._parsed  # pylint: disable=protected-access
-        # A fragment must not introduce FROM, WHERE, UNION, another projection,
-        # or a nested query whose column scope differs from this dataset.
-        if (
-            not isinstance(parsed, exp.Select)
-            or len(parsed.expressions) != 1
-            or any(value for key, value in parsed.args.items() if key != "expressions")
-        ):
-            raise QueryObjectValidationError(error)
-        for node in parsed.walk():
-            if node is not parsed and isinstance(
-                node,
-                (
-                    exp.Query,
-                    exp.Table,
-                    exp.Command,
-                    exp.Anonymous,
-                    exp.Parameter,
-                    exp.Placeholder,
-                    exp.Lambda,
-                    exp.Columns,
-                ),
-            ):
-                raise QueryObjectValidationError(error)
-            if isinstance(node, exp.Star) and not isinstance(node.parent, exp.Count):
-                raise QueryObjectValidationError(error)
-            if isinstance(node, exp.Column) and (
-                node.table
-                or node.db
-                or node.catalog
-                or not isinstance(node.this, exp.Identifier)
-            ):
-                raise QueryObjectValidationError(error)
-        return {column.name for column in parsed.find_all(exp.Column)}
+            raise QueryObjectValidationError(
+                _("SQL expression cannot be safely resolved for column security")
+            ) from ex
 
     def _validate_column_security(
         self,
@@ -2493,108 +2568,20 @@ class ExploreMixin:  # pylint: disable=too-many-public-methods
         if allowed_columns is None:
             return
 
-        columns = {column.column_name: column for column in self.columns}
-        metrics = {metric.metric_name: metric for metric in self.metrics}
-        aliases = {
-            utils.get_metric_name(metric): metric
-            for metric in metric_references or []
-            if metric is not None
-        }
-        visiting: set[tuple[str, str]] = set()
-        validated: set[tuple[str, str]] = set()
-
-        def unresolved() -> None:
-            raise QueryObjectValidationError(
-                _("SQL expression cannot be safely resolved for column security")
-            )
-
-        def validate_expression(expression: str, allow_aliases: bool = False) -> None:
-            for name in self._column_security_expression_columns(expression):
-                if name in columns:
-                    validate_column(name)
-                    # Raw SQL does not inline TableColumn.expression. A name
-                    # matching a calculated column could instead bind to a
-                    # physical field with that name. Inspect dependencies, but
-                    # do not authorize this ambiguous SQL-level reference.
-                    if columns[name].expression:
-                        unresolved()
-                elif allow_aliases and name in aliases:
-                    validate_metric_reference(aliases[name])
-                else:
-                    # Unknown identifiers may refer to physical columns absent
-                    # from metadata. Never treat them as harmless constants.
-                    unresolved()
-
-        def validate_dependency(kind: str, name: str, expression: str) -> None:
-            key = (kind, name)
-            if key in visiting:
-                unresolved()
-            if key not in validated:
-                visiting.add(key)
-                validate_expression(expression)
-                visiting.remove(key)
-                validated.add(key)
-
-        def validate_column(name: str) -> None:
-            if name not in allowed_columns:
-                raise QueryObjectValidationError(
-                    _("Column %(column)s is not accessible", column=name),
-                    error_type=SupersetErrorType.COLUMN_SECURITY_ACCESS_ERROR,
-                )
-            if expression := columns[name].expression:
-                validate_dependency("column", name, expression)
-
-        def validate_metric(name: str) -> None:
-            validate_dependency("metric", name, metrics[name].expression)
-
-        def validate_reference(reference: Any) -> None:
-            if reference is None or reference == DTTM_ALIAS:
-                return
-            if isinstance(reference, dict):
-                if reference.get("expressionType") == "SIMPLE":
-                    reference = (reference.get("column") or {}).get("column_name")
-                else:
-                    reference = reference.get("sqlExpression")
-            if not isinstance(reference, str) or not reference.strip():
-                unresolved()
-            elif reference in columns:
-                validate_column(reference)
-            else:
-                validate_expression(reference)
-
-        def validate_metric_reference(metric: Any) -> None:
-            if isinstance(metric, str) and metric in metrics:
-                validate_metric(metric)
-            elif isinstance(metric, dict) and metric.get("expressionType") == "SQL":
-                # Unlike adhoc columns, SQL metrics never resolve an exact
-                # column-name match through TableColumn.get_sqla_col().
-                validate_expression(metric.get("sqlExpression") or "")
-            else:
-                validate_reference(metric)
-
+        validator = _ColumnSecurityValidator(self, allowed_columns, metric_references)
         for reference in references:
-            validate_reference(reference)
+            validator.validate_reference(reference)
         for reference in filter_references or []:
-            if isinstance(reference, str) and reference not in columns:
-                validate_metric_reference(reference)
-            else:
-                validate_reference(reference)
+            validator.validate_filter(reference)
         for metric in metric_references or []:
-            validate_metric_reference(metric)
+            validator.validate_metric_reference(metric)
         for reference in orderby_references or []:
-            if isinstance(reference, str) and reference in aliases:
-                validate_metric_reference(aliases[reference])
-            elif isinstance(reference, str) and reference in metrics:
-                validate_metric(reference)
-            elif isinstance(reference, dict):
-                validate_metric_reference(reference)
-            else:
-                validate_reference(reference)
+            validator.validate_orderby(reference)
         for expression in sql_expressions or []:
             if expression:
-                validate_expression(expression)
+                validator.validate_expression(expression)
         if having:
-            validate_expression(having, allow_aliases=True)
+            validator.validate_expression(having, allow_aliases=True)
 
     def values_for_column(  # pylint: disable=too-many-locals
         self,
@@ -2847,7 +2834,9 @@ class ExploreMixin:  # pylint: disable=too-many-public-methods
             *(columns or []),
             *(groupby or []),
             *(series_columns or []),
-            requested_granularity if requested_granularity in self.column_names else None,
+            requested_granularity
+            if requested_granularity in self.column_names
+            else None,
             granularity,
         ]
         if granularity and self.always_filter_main_dttm:
@@ -3175,7 +3164,7 @@ class ExploreMixin:  # pylint: disable=too-many-public-methods
         where_clause_and: list[ColumnElement] = []
         having_clause_and: list[ColumnElement] = []
 
-        for flt in filter:  # type: ignore
+        for flt in filter or []:
             if not all(flt.get(s) for s in ["col", "op"]):
                 continue
             flt_col = flt["col"]

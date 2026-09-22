@@ -16,7 +16,7 @@
 # under the License.
 from copy import deepcopy
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -60,7 +60,9 @@ def sanitize(
     """Run the helper with a real datasource and a mocked policy lookup."""
     with (
         patch("superset.charts.data.api.get_datasource_by_id", return_value=table),
-        patch("superset.charts.data.api.security_manager") as manager,
+        patch(
+            "superset.charts.data.api.security_manager", new_callable=MagicMock
+        ) as manager,
     ):
         manager.get_allowed_columns.return_value = allowed
         return ChartDataRestApi()._sanitize_saved_table_columns_for_column_security(
