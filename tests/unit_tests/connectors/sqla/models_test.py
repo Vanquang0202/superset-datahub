@@ -119,8 +119,11 @@ def test_column_security_query_cache_isolation(mocker: MockerFixture) -> None:
     resolver.return_value = {"don_vi", "khu_vuc", "trang_thai"}
     restricted = processor.query_cache_key(query)
     assert restricted not in cache
+    assert restricted is not None
     cache[restricted] = "restricted result"
-    assert cache[processor.query_cache_key(query)] == "restricted result"
+    restricted_again = processor.query_cache_key(query)
+    assert restricted_again is not None
+    assert cache[restricted_again] == "restricted result"
 
     resolver.return_value = {"don_vi"}
     narrower = processor.query_cache_key(query)
