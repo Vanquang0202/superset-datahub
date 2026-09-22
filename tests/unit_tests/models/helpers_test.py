@@ -20,7 +20,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
@@ -33,6 +33,7 @@ from sqlalchemy.sql.elements import ColumnElement
 from superset.superset_typing import AdhocColumn
 
 if TYPE_CHECKING:
+    from superset.connectors.sqla.models import SqlaTable
     from superset.models.core import Database
 
 
@@ -69,6 +70,358 @@ def database(mocker: MockerFixture, session: Session) -> Database:
     )
 
     return database
+
+
+@pytest.fixture
+def column_security_table(database: Database) -> SqlaTable:
+    """Build a dataset for structured column-policy checks."""
+    from superset.connectors.sqla.models import SqlaTable, TableColumn
+
+    return SqlaTable(
+        id=3,
+        database=database,
+        table_name="superset_bi_demo",
+        columns=[
+            TableColumn(column_name=name, type="TEXT")
+            for name in ["don_vi", "khu_vuc", "trang_thai", "muc_tieu"]
+        ],
+    )
+
+
+@pytest.mark.parametrize(
+    "allowed, selected",
+    [(None, "muc_tieu"), ({"don_vi", "khu_vuc", "trang_thai"}, "don_vi")],
+)
+def test_column_security_query_allowed(
+    column_security_table: SqlaTable,
+    allowed: set[str] | None,
+    selected: str,
+) -> None:
+    """Unrestricted and explicitly allowed queries still compile."""
+    with patch("superset.security_manager.get_allowed_columns", return_value=allowed):
+        query = column_security_table.get_sqla_query(
+            columns=[selected], is_timeseries=False
+        )
+    assert selected in str(query.sqla_query)
+    assert len(column_security_table.columns) == 4
+
+
+@pytest.mark.parametrize(
+    "query_kwargs",
+    [
+        {"columns": ["muc_tieu"]},
+        {"groupby": ["muc_tieu"]},
+        {"series_columns": ["muc_tieu"]},
+        {"granularity": "muc_tieu"},
+        {"filter": [{"col": "muc_tieu", "op": "==", "val": "x"}]},
+        {"orderby": [("muc_tieu", True)]},
+        {
+            "metrics": [
+                {
+                    "expressionType": "SIMPLE",
+                    "aggregate": "COUNT",
+                    "column": {"column_name": "muc_tieu"},
+                }
+            ]
+        },
+        {"columns": [{"sqlExpression": "muc_tieu", "label": "alias"}]},
+        {"groupby": [{"sqlExpression": "muc_tieu", "label": "alias"}]},
+        {
+            "filter": [
+                {
+                    "col": {"sqlExpression": "muc_tieu", "label": "alias"},
+                    "op": "==",
+                    "val": "x",
+                }
+            ]
+        },
+        {
+            "orderby": [
+                (
+                    {
+                        "expressionType": "SIMPLE",
+                        "aggregate": "SUM",
+                        "column": {"column_name": "muc_tieu"},
+                    },
+                    True,
+                )
+            ]
+        },
+        {
+            "series_limit_metric": {
+                "expressionType": "SIMPLE",
+                "aggregate": "SUM",
+                "column": {"column_name": "muc_tieu"},
+            }
+        },
+        {
+            "timeseries_limit_metric": {
+                "expressionType": "SIMPLE",
+                "aggregate": "SUM",
+                "column": {"column_name": "muc_tieu"},
+            }
+        },
+    ],
+)
+@pytest.mark.parametrize("allowed", [{"don_vi", "khu_vuc", "trang_thai"}, set()])
+def test_column_security_query_rejected(
+    column_security_table: SqlaTable,
+    query_kwargs: dict[str, Any],
+    allowed: set[str],
+) -> None:
+    """Reject structured references before templates or database queries run."""
+    from superset.exceptions import QueryObjectValidationError
+
+    with (
+        patch("superset.security_manager.get_allowed_columns", return_value=allowed),
+        patch.object(column_security_table, "get_template_processor") as template,
+        pytest.raises(QueryObjectValidationError, match="muc_tieu.*not accessible"),
+    ):
+        column_security_table.get_sqla_query(
+            **{"columns": [], "is_timeseries": False, **query_kwargs}
+        )
+    template.assert_not_called()
+    assert len(column_security_table.columns) == 4
+
+
+@pytest.mark.parametrize("allowed", [{"don_vi", "khu_vuc", "trang_thai"}, set()])
+def test_column_security_values_rejected(
+    column_security_table: SqlaTable, allowed: set[str]
+) -> None:
+    """Filter-value lookups enforce the same policy as chart queries."""
+    from superset.exceptions import QueryObjectValidationError
+
+    with (
+        patch("superset.security_manager.get_allowed_columns", return_value=allowed),
+        patch.object(column_security_table, "get_from_clause") as from_clause,
+        pytest.raises(QueryObjectValidationError, match="muc_tieu.*not accessible"),
+    ):
+        column_security_table.values_for_column("muc_tieu")
+    from_clause.assert_not_called()
+
+
+@pytest.fixture
+def column_security_expression_table(column_security_table: SqlaTable) -> SqlaTable:
+    """Include saved metrics and transitive calculated-column dependencies."""
+    from superset.connectors.sqla.models import SqlMetric, TableColumn
+
+    column_security_table.columns.extend(
+        [
+            TableColumn(column_name="so_luong", type="INTEGER"),
+            TableColumn(column_name="safe_calc", expression="UPPER(don_vi)"),
+            TableColumn(column_name="unsafe_calc", expression="muc_tieu * 2"),
+            TableColumn(column_name="nested_calc", expression="unsafe_calc + 1"),
+            TableColumn(column_name="cycle_a", expression="cycle_b"),
+            TableColumn(column_name="cycle_b", expression="cycle_a"),
+        ]
+    )
+    column_security_table.metrics = [
+        SqlMetric(metric_name="safe_metric", expression="COUNT(don_vi)"),
+        SqlMetric(metric_name="unsafe_metric", expression="SUM(muc_tieu)"),
+        SqlMetric(metric_name="nested_metric", expression="SUM(nested_calc)"),
+    ]
+    return column_security_table
+
+
+@pytest.mark.parametrize(
+    "query_kwargs",
+    [
+        {"metrics": ["safe_metric"]},
+        {"columns": ["safe_calc"]},
+        {"columns": [{"sqlExpression": "UPPER(don_vi)", "label": "display"}]},
+        {"metrics": [{"expressionType": "SQL", "sqlExpression": "COUNT(*)"}]},
+        {"metrics": [{"expressionType": "SQL", "sqlExpression": "ABS(-2) + 1"}]},
+        {"extras": {"where": "don_vi = 'muc_tieu'"}},
+        {"metrics": ["safe_metric"], "extras": {"having": "safe_metric > 0"}},
+        {"metrics": ["safe_metric"], "orderby": [("safe_metric", True)]},
+        {
+            "metrics": [
+                {
+                    "expressionType": "SQL",
+                    "sqlExpression": "COUNT(don_vi)",
+                    "label": "total",
+                }
+            ],
+            "extras": {"having": "total > 0"},
+            "orderby": [("total", True)],
+        },
+    ],
+)
+def test_column_security_expressions_allowed(
+    column_security_expression_table: SqlaTable, query_kwargs: dict[str, Any]
+) -> None:
+    """Constants, functions, aliases and allowed dependencies can compile."""
+    with patch(
+        "superset.security_manager.get_allowed_columns",
+        return_value={"don_vi", "khu_vuc", "trang_thai", "safe_calc"},
+    ):
+        column_security_expression_table.get_sqla_query(
+            **{"columns": ["don_vi"], "is_timeseries": False, **query_kwargs}
+        )
+
+
+def test_column_security_sql_metric_without_policy(
+    column_security_expression_table: SqlaTable,
+) -> None:
+    """No policy preserves SQL metric behavior and bypasses CLS parsing."""
+    with (
+        patch("superset.security_manager.get_allowed_columns", return_value=None),
+        patch.object(
+            column_security_expression_table, "_column_security_expression_columns"
+        ) as parser,
+    ):
+        column_security_expression_table.get_sqla_query(
+            metrics=["unsafe_metric"], is_timeseries=False
+        )
+    parser.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "query_kwargs",
+    [
+        {"metrics": ["unsafe_metric"]},
+        {"metrics": ["nested_metric"]},
+        {"columns": ["unsafe_calc"]},
+        {"columns": ["nested_calc"]},
+        {"columns": ["cycle_a"]},
+        {"metrics": [{"expressionType": "SQL", "sqlExpression": "COUNT(safe_calc)"}]},
+        {"metrics": [{"expressionType": "SQL", "sqlExpression": "safe_calc"}]},
+        {"metrics": [{"expressionType": "SQL", "sqlExpression": "SUM(muc_tieu)"}]},
+        {"columns": [{"sqlExpression": "so_luong + 1", "label": "display"}]},
+        {"extras": {"where": "muc_tieu > 0"}},
+        {"extras": {"having": "SUM(so_luong) > 0"}},
+        {"orderby": [("unsafe_metric", True)]},
+        {"filter": [{"col": "unsafe_metric", "op": ">", "val": 0}]},
+        {"series_limit_metric": "unsafe_metric"},
+        {"extras": {"where": "SUM("}},
+        {"extras": {"where": "unknown_column > 0"}},
+        {"extras": {"where": "{{ dynamic_sql }}"}},
+        {"extras": {"where": "1 = 1; SELECT muc_tieu"}},
+        {"extras": {"where": "EXISTS (SELECT 1 FROM private_table)"}},
+        {"columns": [{"sqlExpression": "*", "label": "display"}]},
+        {"columns": [{"sqlExpression": "opaque_function()", "label": "display"}]},
+        {"columns": [{"sqlExpression": "other_table.don_vi", "label": "display"}]},
+        {"columns": [{"sqlExpression": "don_vi, muc_tieu", "label": "display"}]},
+        {"columns": [{"sqlExpression": "don_vi FROM other_table", "label": "display"}]},
+    ],
+)
+def test_column_security_expressions_rejected(
+    column_security_expression_table: SqlaTable, query_kwargs: dict[str, Any]
+) -> None:
+    """Forbidden dependencies and unresolved SQL fail before query construction."""
+    from superset.exceptions import QueryObjectValidationError
+
+    with (
+        patch(
+            "superset.security_manager.get_allowed_columns",
+            return_value={
+                "don_vi",
+                "khu_vuc",
+                "trang_thai",
+                "safe_calc",
+                "unsafe_calc",
+                "nested_calc",
+                "cycle_a",
+                "cycle_b",
+            },
+        ),
+        patch.object(
+            column_security_expression_table, "get_template_processor"
+        ) as template,
+        pytest.raises(QueryObjectValidationError),
+    ):
+        column_security_expression_table.get_sqla_query(
+            **{"columns": ["don_vi"], "is_timeseries": False, **query_kwargs}
+        )
+    template.assert_not_called()
+
+
+def test_column_security_expression_empty_policy(
+    column_security_expression_table: SqlaTable,
+) -> None:
+    """An empty policy permits constants but no physical dependencies."""
+    from superset.exceptions import QueryObjectValidationError
+
+    with patch("superset.security_manager.get_allowed_columns", return_value=set()):
+        column_security_expression_table._validate_column_security(
+            [], sql_expressions=["COUNT(*)", "ABS(-2)"]
+        )
+        with pytest.raises(QueryObjectValidationError, match="don_vi.*not accessible"):
+            column_security_expression_table._validate_column_security(
+                [], sql_expressions=["COUNT(don_vi)"]
+            )
+
+
+def test_column_security_calculated_values_rejected(
+    column_security_expression_table: SqlaTable,
+) -> None:
+    """Allowlisting a calculated column does not allow forbidden dependencies."""
+    from superset.exceptions import QueryObjectValidationError
+
+    with (
+        patch(
+            "superset.security_manager.get_allowed_columns",
+            return_value={"unsafe_calc"},
+        ),
+        pytest.raises(QueryObjectValidationError, match="muc_tieu.*not accessible"),
+    ):
+        column_security_expression_table.values_for_column("unsafe_calc")
+
+
+@pytest.mark.parametrize(
+    "engine, expression, expected",
+    [
+        ("postgresql", 'SUM("don_vi")', {"don_vi"}),
+        ("mysql", "SUM(`don_vi`)", {"don_vi"}),
+        ("sqlite", "don_vi AS muc_tieu", {"don_vi"}),
+        ("sqlite", "CAST(1 AS TEXT)", set()),
+    ],
+)
+def test_column_security_expression_dialect(
+    column_security_expression_table: SqlaTable,
+    engine: str,
+    expression: str,
+    expected: set[str],
+) -> None:
+    """Dialect quoting, output aliases and SQL type names resolve correctly."""
+    from unittest.mock import PropertyMock
+
+    with patch.object(
+        type(column_security_expression_table.database),
+        "backend",
+        new_callable=PropertyMock,
+        return_value=engine,
+    ):
+        assert (
+            column_security_expression_table._column_security_expression_columns(
+                expression
+            )
+            == expected
+        )
+
+
+@pytest.mark.parametrize(
+    "engine, expression",
+    [("duckdb", "COLUMNS('.*')"), ("unknown_engine", "don_vi")],
+)
+def test_column_security_expression_unsupported(
+    column_security_expression_table: SqlaTable, engine: str, expression: str
+) -> None:
+    """Dynamic column selectors and unknown dialects cannot bypass resolution."""
+    from unittest.mock import PropertyMock
+
+    from superset.exceptions import QueryObjectValidationError
+
+    with (
+        patch.object(
+            type(column_security_expression_table.database),
+            "backend",
+            new_callable=PropertyMock,
+            return_value=engine,
+        ),
+        pytest.raises(QueryObjectValidationError),
+    ):
+        column_security_expression_table._column_security_expression_columns(expression)
 
 
 def test_values_for_column(database: Database) -> None:

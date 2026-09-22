@@ -47,6 +47,12 @@ from tests.integration_tests.test_app import app
     "load_birth_names_data", "load_birth_names_dashboard_with_slices"
 )
 class TestAsyncQueries(SupersetTestCase):
+    @pytest.fixture(autouse=True)
+    def grant_gamma_birth_names_access(self, request):
+        """Give the queued gamma identity access to the fixture datasource."""
+        request.getfixturevalue("load_birth_names_dashboard_with_slices")
+        self.grant_role_access_to_table(self.get_table(name="birth_names"), "Gamma")
+
     @parameterized.expand(
         [
             ("RedisCacheBackend", mock.Mock(spec=RedisCacheBackend)),

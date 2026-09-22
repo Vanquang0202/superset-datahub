@@ -246,6 +246,24 @@ class Superset(BaseSupersetView):
         except SupersetException as ex:
             return json_error_response(utils.error_msg_from_exception(ex), 400)
 
+    def _skip_column_security_response_cache(
+        self,
+        datasource_type: str | None = None,
+        datasource_id: int | None = None,
+    ) -> bool:
+        """Use the CLS-aware data cache instead of shared legacy GET responses."""
+        form_data = get_form_data()[0]
+        datasource_id, datasource_type = get_datasource_info(
+            datasource_id, datasource_type, form_data
+        )
+        if datasource_id is None or datasource_type is None:
+            return True
+        datasource = DatasourceDAO.get_datasource(datasource_type, datasource_id)
+        return (
+            isinstance(datasource, SqlaTable)
+            and security_manager.get_allowed_columns(datasource) is not None
+        )
+
     @api
     @has_access_api
     @handle_api_exception
@@ -264,7 +282,7 @@ class Superset(BaseSupersetView):
             "POST",
         ),
     )
-    @etag_cache()
+    @etag_cache(skip=_skip_column_security_response_cache)
     @check_resource_permissions(check_datasource_perms)
     @deprecated(eol_version="5.0.0")
     def explore_json(

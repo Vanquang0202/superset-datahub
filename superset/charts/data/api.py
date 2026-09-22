@@ -44,16 +44,20 @@ from superset.commands.chart.exceptions import (
     ChartDataCacheLoadError,
     ChartDataQueryFailedError,
 )
+from superset.commands.utils import get_datasource_by_id
 from superset.common.chart_data import ChartDataResultFormat, ChartDataResultType
-from superset.connectors.sqla.models import BaseDatasource
+from superset.connectors.sqla.models import BaseDatasource, SqlaTable
+from superset.constants import NO_TIME_RANGE
 from superset.daos.exceptions import DatasourceNotFound
-from superset.exceptions import QueryObjectValidationError
+from superset.errors import SupersetErrorType
+from superset.exceptions import QueryObjectValidationError, SupersetException
 from superset.extensions import event_logger
 from superset.models.sql_lab import Query
 from superset.utils import json
 from superset.utils.core import (
     create_zip,
     DatasourceType,
+    FilterOperator,
     get_user_id,
 )
 from superset.utils.decorators import logs_context
@@ -162,7 +166,7 @@ class ChartDataRestApi(ChartRestApi):
         except DatasourceNotFound:
             return self.response_404()
         except QueryObjectValidationError as error:
-            return self.response_400(message=error.message)
+            return self._query_error_response(error)
         except ValidationError as error:
             return self.response_400(
                 message=_(
@@ -250,13 +254,16 @@ class ChartDataRestApi(ChartRestApi):
             return self.response_400(message=_("Request is not JSON"))
 
         try:
+            json_body = self._sanitize_saved_table_columns_for_column_security(
+                json_body
+            )
             query_context = self._create_query_context_from_form(json_body)
             command = ChartDataCommand(query_context)
             command.validate()
         except DatasourceNotFound:
             return self.response_404()
         except QueryObjectValidationError as error:
-            return self.response_400(message=error.message)
+            return self._query_error_response(error)
         except ValidationError as error:
             return self.response_400(
                 message=_(
@@ -283,6 +290,110 @@ class ChartDataRestApi(ChartRestApi):
             filename=filename,
             expected_rows=expected_rows,
         )
+
+    def _sanitize_saved_table_columns_for_column_security(  # noqa: C901
+        self, json_body: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Prune forbidden raw columns and no-op time filters from saved tables."""
+        if not isinstance(json_body, dict):
+            return json_body
+        form_data = json_body.get("form_data")
+        if (
+            not isinstance(form_data, dict)
+            or not form_data.get("slice_id")
+            or form_data.get("viz_type") != "table"
+        ):
+            return json_body
+
+        # Match the table plugin's getQueryMode fallback for legacy saved charts.
+        raw_columns = form_data.get("all_columns")
+        query_mode = form_data.get("query_mode")
+        if query_mode == "aggregate" or (
+            query_mode != "raw" and not (isinstance(raw_columns, list) and raw_columns)
+        ):
+            return json_body
+
+        source = json_body.get("datasource")
+        if (
+            not isinstance(source, dict)
+            or source.get("type") != DatasourceType.TABLE
+            or not isinstance(source.get("id"), (int, str))
+        ):
+            return json_body
+        datasource = get_datasource_by_id(source["id"], source["type"])
+        if not isinstance(datasource, SqlaTable):
+            return json_body
+        allowed_columns = security_manager.get_allowed_columns(datasource)
+        if allowed_columns is None:
+            return json_body
+
+        physical_columns = {
+            column.column_name for column in datasource.columns if not column.expression
+        }
+
+        def filter_columns(columns: list[Any]) -> list[Any]:
+            """Keep expressions and unknown references for normal CLS validation."""
+            return [
+                column
+                for column in columns
+                if not isinstance(column, str)
+                or column not in physical_columns
+                or column in allowed_columns
+            ]
+
+        def is_forbidden_noop_temporal_filter(
+            clause: Any, *, adhoc: bool = False
+        ) -> bool:
+            """Recognize only physical-column time filters with no time bounds."""
+            if not isinstance(clause, dict):
+                return False
+            if adhoc and (
+                clause.get("expressionType") != "SIMPLE"
+                or clause.get("clause") != "WHERE"
+            ):
+                return False
+            column = clause.get("subject" if adhoc else "col")
+            operator = clause.get("operator" if adhoc else "op")
+            value = clause.get("comparator" if adhoc else "val")
+            return (
+                isinstance(column, str)
+                and column in physical_columns
+                and column not in allowed_columns
+                and operator == FilterOperator.TEMPORAL_RANGE
+                and isinstance(value, str)
+                and (value == NO_TIME_RANGE or value == _(NO_TIME_RANGE))
+            )
+
+        sanitized = dict(json_body)
+        queries = json_body.get("queries")
+        if isinstance(queries, list):
+            sanitized_queries = []
+            for query in queries:
+                if not isinstance(query, dict):
+                    sanitized_queries.append(query)
+                    continue
+                sanitized_query = dict(query)
+                if isinstance(query.get("columns"), list):
+                    sanitized_query["columns"] = filter_columns(query["columns"])
+                if isinstance(query.get("filters"), list):
+                    sanitized_query["filters"] = [
+                        clause
+                        for clause in query["filters"]
+                        if not is_forbidden_noop_temporal_filter(clause)
+                    ]
+                sanitized_queries.append(sanitized_query)
+            sanitized["queries"] = sanitized_queries
+        sanitized_form_data = dict(form_data)
+        if isinstance(raw_columns, list):
+            sanitized_form_data["all_columns"] = filter_columns(raw_columns)
+        if isinstance(form_data.get("adhoc_filters"), list):
+            sanitized_form_data["adhoc_filters"] = [
+                clause
+                for clause in form_data["adhoc_filters"]
+                if not is_forbidden_noop_temporal_filter(clause, adhoc=True)
+            ]
+        sanitized["form_data"] = sanitized_form_data
+        return sanitized
 
     @expose("/data/<cache_key>", methods=("GET",))
     @protect()
@@ -353,7 +464,10 @@ class ChartDataRestApi(ChartRestApi):
         """
         # First, look for the chart query results in the cache.
         with contextlib.suppress(ChartDataCacheLoadError):
-            result = command.run(force_cached=True)
+            try:
+                result = command.run(force_cached=True)
+            except (ChartDataQueryFailedError, QueryObjectValidationError) as exc:
+                return self._query_error_response(exc)
             if result is not None:
                 # Log is_cached if extra payload callback is provided.
                 # This indicates no async job was triggered - data was already cached
@@ -467,6 +581,16 @@ class ChartDataRestApi(ChartRestApi):
             elif is_cached_values:
                 add_extra_log_payload(is_cached=is_cached_values)
 
+    def _query_error_response(self, error: SupersetException) -> Response:
+        """Preserve CLS error identity without changing chart-data rejection status."""
+        if error.error_type == SupersetErrorType.COLUMN_SECURITY_ACCESS_ERROR:
+            return self.response(
+                400,
+                message=error.message,
+                errors=[{**error.to_dict(), "level": "error", "extra": {}}],
+            )
+        return self.response_400(message=error.message)
+
     @event_logger.log_this
     def _get_data_response(
         self,
@@ -483,8 +607,8 @@ class ChartDataRestApi(ChartRestApi):
             result = command.run(force_cached=force_cached)
         except ChartDataCacheLoadError as exc:
             return self.response_422(message=exc.message)
-        except ChartDataQueryFailedError as exc:
-            return self.response_400(message=exc.message)
+        except (ChartDataQueryFailedError, QueryObjectValidationError) as exc:
+            return self._query_error_response(exc)
 
             # Log is_cached if extra payload callback is provided
         if add_extra_log_payload and result and "queries" in result:

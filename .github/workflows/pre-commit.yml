@@ -29,15 +29,16 @@ jobs:
         uses: ./.github/actions/setup-backend/
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Enable brew and helm-docs
-        # Add brew to the path - see https://github.com/actions/runner-images/issues/6283
+      - name: Install helm-docs
         run: |
-          echo "/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin" >> $GITHUB_PATH
-          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-          echo "HOMEBREW_PREFIX=$HOMEBREW_PREFIX" >>"${GITHUB_ENV}"
-          echo "HOMEBREW_CELLAR=$HOMEBREW_CELLAR" >>"${GITHUB_ENV}"
-          echo "HOMEBREW_REPOSITORY=$HOMEBREW_REPOSITORY" >>"${GITHUB_ENV}"
-          brew install norwoodj/tap/helm-docs
+          cd "${RUNNER_TEMP}"
+          curl --fail --location --retry 3 --output helm-docs.tar.gz \
+            https://github.com/norwoodj/helm-docs/releases/download/v1.14.2/helm-docs_1.14.2_Linux_x86_64.tar.gz
+          echo "a8cf72ada34fad93285ba2a452b38bdc5bd52cc9a571236244ec31022928d6cc  helm-docs.tar.gz" | sha256sum --check
+          mkdir -p "${RUNNER_TEMP}/helm-docs-bin"
+          tar -xzf helm-docs.tar.gz -C "${RUNNER_TEMP}/helm-docs-bin" helm-docs
+          echo "${RUNNER_TEMP}/helm-docs-bin" >> "${GITHUB_PATH}"
+          "${RUNNER_TEMP}/helm-docs-bin/helm-docs" --version
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:

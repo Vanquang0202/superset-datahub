@@ -36,7 +36,12 @@ import {
   TreeSelect,
 } from '@superset-ui/core/components';
 import { t, logging } from '@apache-superset/core';
-import { DatasourceType, isDefined, SupersetClient } from '@superset-ui/core';
+import {
+  DatasourceType,
+  getClientErrorObject,
+  isDefined,
+  SupersetClient,
+} from '@superset-ui/core';
 import { css, styled, Alert } from '@apache-superset/core/ui';
 import { Radio } from '@superset-ui/core/components/Radio';
 import { GRID_COLUMN_COUNT } from 'src/dashboard/util/constants';
@@ -338,6 +343,33 @@ class SaveModal extends Component<SaveModalProps, SaveModalState> {
 
       this.setState({ isLoading: false });
       this.onHide();
+    } catch (error: unknown) {
+      logging.error('Error saving chart:', error);
+      const response =
+        error instanceof Response
+          ? error
+          : error &&
+              typeof error === 'object' &&
+              'response' in error &&
+              error.response instanceof Response
+            ? error.response
+            : undefined;
+      if (response?.status === 403) {
+        this.props.addDangerToast(
+          t('You do not have permission to save or edit this chart.'),
+        );
+      } else {
+        const { error: detail } = await getClientErrorObject(
+          response
+            ? { response }
+            : error instanceof Error
+              ? error.message
+              : typeof error === 'string'
+                ? error
+                : t('An error occurred'),
+        );
+        this.props.addDangerToast(t('Unable to save chart: %s', detail));
+      }
     } finally {
       this.setState({ isLoading: false });
     }

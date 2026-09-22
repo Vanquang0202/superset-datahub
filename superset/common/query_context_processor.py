@@ -98,6 +98,7 @@ class QueryContextProcessor:
             force_cached=force_cached,
         )
 
+        validation_error_type = None
         if query_obj and cache_key and not cache.is_loaded:
             try:
                 if invalid_columns := [
@@ -130,6 +131,7 @@ class QueryContextProcessor:
             except QueryObjectValidationError as ex:
                 cache.error_message = str(ex)
                 cache.status = QueryStatus.FAILED
+                validation_error_type = ex.error_type
 
         # the N-dimensional DataFrame has converted into flat DataFrame
         # by `flatten operator`, "comma" in the column is escaped by `escape_separator`
@@ -189,6 +191,7 @@ class QueryContextProcessor:
             "rejected_filter_columns": cache.rejected_filter_columns,
             "annotation_data": cache.annotation_data,
             "error": cache.error_message,
+            **({"error_type": validation_error_type} if validation_error_type else {}),
             "is_cached": cache.is_cached,
             "query": cache.query,
             "status": cache.status,
