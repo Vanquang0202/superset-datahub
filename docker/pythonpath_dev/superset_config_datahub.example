@@ -1,0 +1,61 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Optional DataHub branding for the Docker development configuration.
+# Copy to docker/pythonpath_dev/superset_config_docker.py, or merge these
+# settings into that file if it exists, then restart Superset. For other
+# deployments, merge these settings into your existing superset_config.py.
+# This example is not loaded automatically and contains no database or secrets.
+#
+# The bundled assets are copied to /static/assets/images by the frontend build.
+# The colors are example choices.
+# System or dashboard themes configured through the UI can override these tokens.
+
+from copy import deepcopy
+
+from superset.config import THEME_DARK as _base_theme_dark
+from superset.config import THEME_DEFAULT as _base_theme_default
+
+APP_NAME = "DataHub"
+SHOW_SUPERSET_WATERMARK = False
+SHOW_VERSION_IN_ABOUT = False
+ABOUT_TEXT = APP_NAME
+APP_ICON = "/static/assets/images/datahub-logo.svg"
+FAVICONS = [
+    {"href": "/static/assets/images/datahub-favicon.svg", "type": "image/svg+xml"}
+]
+LOGO_TOOLTIP = APP_NAME
+LOGO_TARGET_PATH = "/"
+
+# Theme tokens must be overridden explicitly: changing APP_NAME or APP_ICON
+# does not update the values already captured in the base theme dictionaries.
+_branding_tokens = {
+    "brandAppName": APP_NAME,
+    "brandLogoUrl": APP_ICON,
+    "brandLogoAlt": APP_NAME,
+    "brandLogoHref": LOGO_TARGET_PATH,
+    "colorPrimary": "#3B82F6",
+    "colorLink": "#60A5FA",
+}
+
+# Copy before updating to preserve Superset's defaults and unrelated tokens.
+THEME_DEFAULT = deepcopy(_base_theme_default)
+THEME_DEFAULT["token"].update(_branding_tokens)
+
+THEME_DARK = deepcopy(_base_theme_dark)
+if THEME_DARK is not None:
+    THEME_DARK["token"].update(_branding_tokens)
