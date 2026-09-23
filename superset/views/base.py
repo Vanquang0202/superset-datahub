@@ -290,17 +290,30 @@ def menu_data(user: User) -> dict[str, Any]:
         },
         "environment_tag": get_environment_tag(),
         "navbar_right": {
-            # show the watermark if the default app icon has been overridden
-            "show_watermark": ("superset-logo-horiz" not in appbuilder.app_icon),
+            "show_watermark": app.config["SHOW_SUPERSET_WATERMARK"]
+            and "superset-logo-horiz" not in appbuilder.app_icon,
+            "about_text": app.config["ABOUT_TEXT"],
             "bug_report_url": app.config["BUG_REPORT_URL"],
             "bug_report_icon": app.config["BUG_REPORT_ICON"],
             "bug_report_text": app.config["BUG_REPORT_TEXT"],
             "documentation_url": app.config["DOCUMENTATION_URL"],
             "documentation_icon": app.config["DOCUMENTATION_ICON"],
             "documentation_text": app.config["DOCUMENTATION_TEXT"],
-            "version_string": version_metadata.get("version_string"),
-            "version_sha": version_metadata.get("version_sha"),
-            "build_number": version_metadata.get("build_number"),
+            "version_string": (
+                version_metadata.get("version_string")
+                if app.config["SHOW_VERSION_IN_ABOUT"]
+                else None
+            ),
+            "version_sha": (
+                version_metadata.get("version_sha")
+                if app.config["SHOW_VERSION_IN_ABOUT"]
+                else None
+            ),
+            "build_number": (
+                version_metadata.get("build_number")
+                if app.config["SHOW_VERSION_IN_ABOUT"]
+                else None
+            ),
             "languages": languages,
             "show_language_picker": len(languages) > 1,
             "user_is_anonymous": user.is_anonymous,

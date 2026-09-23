@@ -354,6 +354,15 @@ AUTH_RATE_LIMIT = "5 per second"
 # Uncomment to setup Your App name
 APP_NAME = "Superset"
 
+# Show the Apache Superset attribution in the About menu when enabled.
+SHOW_SUPERSET_WATERMARK = True
+
+# Show version metadata in the About menu when enabled.
+SHOW_VERSION_IN_ABOUT = True
+
+# Optional text shown in the About menu.
+ABOUT_TEXT = ""
+
 # Specify the App icon
 APP_ICON = "/static/assets/images/superset-logo-horiz.png"
 

@@ -520,6 +520,9 @@ test('should render the About section and version_string, sha or build_number wh
   );
 
   expect(about).toBeInTheDocument();
+  expect(
+    screen.queryByText('Powered by Apache Superset'),
+  ).not.toBeInTheDocument();
   expect(versionTexts[0]).toBeInTheDocument();
   expect(shaTexts[0]).toBeInTheDocument();
   expect(buildTexts[0]).toBeInTheDocument();

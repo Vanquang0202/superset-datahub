@@ -99,6 +99,7 @@ export interface BrandProps {
 
 export interface NavBarProps {
   show_watermark: boolean;
+  about_text?: string;
   bug_report_url?: string;
   bug_report_text?: string;
   bug_report_icon?: string;

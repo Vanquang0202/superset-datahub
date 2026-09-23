@@ -507,7 +507,11 @@ const RightMenu = ({
         });
       }
 
-      if (navbarRight.version_string || navbarRight.version_sha) {
+      if (
+        navbarRight.about_text ||
+        navbarRight.version_string ||
+        navbarRight.version_sha
+      ) {
         items.push({ type: 'divider', key: 'version-info-divider' });
 
         const aboutItem: ItemType = {
@@ -528,6 +532,7 @@ const RightMenu = ({
                   `}
                 >
                   {[
+                    navbarRight.about_text,
                     navbarRight.show_watermark &&
                       t('Powered by Apache Superset'),
                     navbarRight.version_string &&
