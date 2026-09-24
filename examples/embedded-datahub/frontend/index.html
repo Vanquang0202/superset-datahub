@@ -29,6 +29,17 @@
         <h1>DataHub Analytics</h1>
         <p>Embedded Superset dashboard</p>
       </header>
+      <section class="rls-controls" aria-labelledby="rls-heading">
+        <h2 id="rls-heading">Developer RLS control</h2>
+        <label for="rls-clause">RLS clause</label>
+        <input id="rls-clause" type="text" placeholder="Enter an RLS clause" />
+        <button id="apply-rls" type="button">Apply RLS</button>
+        <button id="clear-rls" type="button">Clear RLS</button>
+        <p>
+          This input is for local demonstration only. Production browsers must
+          not choose their own RLS rules.
+        </p>
+      </section>
       <p id="status" role="status">Loading dashboard…</p>
       <section id="superset-dashboard" aria-label="Superset dashboard"></section>
     </main>

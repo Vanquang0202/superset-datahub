@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import requests
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 
@@ -87,9 +87,19 @@ def create_app(settings: Settings | None = None) -> Flask:
     def health() -> tuple[dict[str, str], int]:
         return {"status": "ok"}, 200
 
-    @app.get("/api/guest-token")
+    @app.post("/api/guest-token")
     def guest_token() -> tuple[Any, int]:
         """Authenticate server-side and return only a short-lived guest token."""
+        body = request.get_json(silent=True)
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return jsonify(error="Request body must be a JSON object"), 400
+
+        rls_rules = body.get("rls", [])
+        if not isinstance(rls_rules, list):
+            return jsonify(error="rls must be a list"), 400
+
         try:
             session = requests.Session()
 
@@ -137,7 +147,7 @@ def create_app(settings: Settings | None = None) -> Flask:
                             "id": configured_settings.dashboard_uuid,
                         }
                     ],
-                    "rls": [],
+                    "rls": rls_rules,
                 },
                 timeout=15,
             )

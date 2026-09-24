@@ -24,12 +24,15 @@ embeds one Superset dashboard using `@superset-ui/embedded-sdk` and a short-live
 Guest Token. The browser never receives the Superset service-user credentials or
 the Superset access token.
 
+It also demonstrates requirement #3: a Guest Token can carry Row-Level Security
+(RLS) rules that Superset applies when the embedded dashboard queries data.
+
 ```mermaid
 sequenceDiagram
     participant Browser as DataHub frontend
     participant Demo as DataHub demo backend
     participant Superset
-    Browser->>Demo: GET /api/guest-token
+    Browser->>Demo: POST /api/guest-token with optional rls
     Demo->>Superset: POST /api/v1/security/login
     Superset-->>Demo: access_token
     Demo->>Superset: POST /api/v1/security/guest_token/
@@ -69,6 +72,44 @@ The embedded iframe also needs the dashboard's existing allowed-domain check to
 accept `http://localhost:5173`. This is configured through Superset's built-in
 **Embed dashboard** dialog; this example does not add a separate Allowed Domains
 feature.
+
+## Guest Token RLS demonstration
+
+The RLS flow reuses the existing requirement #2 authentication and embedding
+flow:
+
+```text
+frontend -> Flask backend -> Superset Guest Token API -> Embedded SDK dashboard
+```
+
+The frontend sends the optional rules to `POST /api/guest-token`. The backend
+keeps the existing server-side Superset login, CSRF request, dashboard resource
+UUID, and token response behavior, while passing the `rls` list directly into
+the Guest Token payload. For example:
+
+```json
+{
+  "rls": [
+    {
+      "clause": "some_column = 'some_value'"
+    }
+  ]
+}
+```
+
+If `rls` is omitted, the backend sends `"rls": []`, preserving the original
+dashboard behavior. The backend validates only that `rls` is a list; it does
+not interpret tenant, customer, dataset, column, or clause meaning.
+
+To test the mechanism, enter one clause appropriate for the dataset configured
+in your local dashboard and choose **Apply RLS**. Then enter a different clause
+and apply it again. Each action requests a new Guest Token and re-embeds the
+dashboard so the visible rows can be compared. Choose **Clear RLS** to request
+`{"rls": []}` and reload the dashboard without an RLS rule.
+
+The editable clause is a developer/demo control only. In production, a trusted
+backend must generate RLS rules from authenticated user or tenant context, and
+the browser must not be allowed to choose arbitrary RLS rules.
 
 ## Dashboard setup
 

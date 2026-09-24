@@ -22,6 +22,12 @@ import './style.css';
 
 const statusElement = document.querySelector<HTMLParagraphElement>('#status');
 const mountPoint = document.querySelector<HTMLElement>('#superset-dashboard');
+const clauseInput = document.querySelector<HTMLInputElement>('#rls-clause');
+const applyButton = document.querySelector<HTMLButtonElement>('#apply-rls');
+const clearButton = document.querySelector<HTMLButtonElement>('#clear-rls');
+
+type RlsRule = { clause: string };
+let activeRls: RlsRule[] = [];
 
 function configuredValue(value: string | undefined, name: string): string {
   if (!value) {
@@ -37,9 +43,17 @@ function setStatus(message: string, isError = false): void {
   }
 }
 
-async function fetchGuestToken(backendUrl: string): Promise<string> {
+async function fetchGuestToken(
+  backendUrl: string,
+  rlsRules: RlsRule[],
+): Promise<string> {
   const response = await fetch(`${backendUrl}/api/guest-token`, {
-    headers: { Accept: 'application/json' },
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ rls: rlsRules }),
   });
   const payload: unknown = await response.json();
   if (!response.ok || typeof payload !== 'object' || payload === null) {
@@ -70,19 +84,50 @@ async function start(): Promise<void> {
     'VITE_DEMO_BACKEND_URL',
   );
 
-  await embedDashboard({
-    id: dashboardUuid,
-    supersetDomain: supersetUrl,
-    mountPoint,
-    fetchGuestToken: () => fetchGuestToken(backendUrl),
-    dashboardUiConfig: {
-      hideTitle: false,
-      hideTab: false,
-      hideChartControls: false,
-    },
-    iframeTitle: 'DataHub Superset dashboard',
-    referrerPolicy: 'strict-origin-when-cross-origin',
+  const reloadDashboard = async (): Promise<void> => {
+    mountPoint.replaceChildren();
+    await embedDashboard({
+      id: dashboardUuid,
+      supersetDomain: supersetUrl,
+      mountPoint,
+      fetchGuestToken: () => fetchGuestToken(backendUrl, activeRls),
+      dashboardUiConfig: {
+        hideTitle: false,
+        hideTab: false,
+        hideChartControls: false,
+      },
+      iframeTitle: 'DataHub Superset dashboard',
+      referrerPolicy: 'strict-origin-when-cross-origin',
+    });
+  };
+
+  applyButton?.addEventListener('click', () => {
+    const clause = clauseInput?.value.trim() ?? '';
+    activeRls = clause ? [{ clause }] : [];
+    void reloadDashboard().catch(error => {
+      console.error('Embedded dashboard failed to reload:', error);
+      setStatus(
+        error instanceof Error ? error.message : 'Dashboard failed to reload.',
+        true,
+      );
+    });
   });
+
+  clearButton?.addEventListener('click', () => {
+    if (clauseInput) {
+      clauseInput.value = '';
+    }
+    activeRls = [];
+    void reloadDashboard().catch(error => {
+      console.error('Embedded dashboard failed to reload:', error);
+      setStatus(
+        error instanceof Error ? error.message : 'Dashboard failed to reload.',
+        true,
+      );
+    });
+  });
+
+  await reloadDashboard();
   setStatus('Dashboard embedded successfully.');
 }
 

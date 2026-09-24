@@ -62,13 +62,41 @@ header p {
   font-size: 14px;
 }
 
+.rls-controls {
+  padding: 12px 20px;
+  background: #171b21;
+  border-bottom: 1px solid #222832;
+}
+
+.rls-controls h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.rls-controls p {
+  margin: 8px 0 0;
+  color: #8b98a8;
+  font-size: 12px;
+}
+
+.rls-controls input {
+  width: min(480px, 50vw);
+  margin: 0 8px;
+  padding: 6px;
+}
+
+.rls-controls button {
+  margin-right: 8px;
+  padding: 6px 10px;
+}
+
 #status {
   display: none;
 }
 
 #superset-dashboard {
   width: 100%;
-  height: calc(100vh - 64px);
+  height: calc(100vh - 174px);
   border: none;
   border-radius: 0;
   background: #0f1115;
