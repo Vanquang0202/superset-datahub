@@ -18,9 +18,11 @@
 from copy import deepcopy
 from typing import Any
 
-from superset.config import FEATURE_FLAGS as BASE_FEATURE_FLAGS
-from superset.config import TALISMAN_CONFIG as BASE_TALISMAN_CONFIG
-from superset.config import TALISMAN_DEV_CONFIG as BASE_TALISMAN_DEV_CONFIG
+from superset.config import (
+    FEATURE_FLAGS as BASE_FEATURE_FLAGS,
+    TALISMAN_CONFIG as BASE_TALISMAN_CONFIG,
+    TALISMAN_DEV_CONFIG as BASE_TALISMAN_DEV_CONFIG,
+)
 
 FEATURE_FLAGS = deepcopy(BASE_FEATURE_FLAGS)
 FEATURE_FLAGS["EMBEDDED_SUPERSET"] = True
