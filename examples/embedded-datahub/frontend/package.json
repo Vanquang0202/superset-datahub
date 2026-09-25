@@ -1,0 +1,19 @@
+{
+  "name": "datahub-embedded-superset-demo",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5173",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@superset-ui/embedded-sdk": "file:../../../superset-embedded-sdk"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.4",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.8"
+  }
+}
