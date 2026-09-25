@@ -72,7 +72,7 @@ def _raise_for_upstream(response: requests.Response, operation: str) -> None:
     )
 
 
-def create_app(settings: Settings | None = None) -> Flask:
+def create_app(settings: Settings | None = None) -> Flask:  # noqa: C901
     """Create the external DataHub demo backend."""
     app = Flask(__name__)
     configured_settings = settings or Settings.from_environment()
@@ -91,8 +91,7 @@ def create_app(settings: Settings | None = None) -> Flask:
     def guest_token() -> tuple[Any, int]:
         """Authenticate server-side and return only a short-lived guest token."""
         body = request.get_json(silent=True)
-        if body is None:
-            body = {}
+        body = {} if body is None else body
         if not isinstance(body, dict):
             return jsonify(error="Request body must be a JSON object"), 400
 
