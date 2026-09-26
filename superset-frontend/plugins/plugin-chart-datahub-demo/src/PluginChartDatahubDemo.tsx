@@ -117,7 +117,9 @@ export default function PluginChartDatahubDemo(
       </Header>
 
       {items.length === 0 ? (
-        <EmptyState>Select a category and metric, then run the query.</EmptyState>
+        <EmptyState>
+          Select a category and metric, then run the query.
+        </EmptyState>
       ) : (
         items.map(item => {
           const position =

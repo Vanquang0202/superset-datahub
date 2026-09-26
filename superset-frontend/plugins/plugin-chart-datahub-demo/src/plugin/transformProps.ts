@@ -34,10 +34,9 @@ export default function transformProps(chartProps: ChartProps) {
   const categoryKey =
     configuredSeries && keys.includes(configuredSeries)
       ? configuredSeries
-      : keys[0] ?? '';
+      : (keys[0] ?? '');
 
-  const metricKey =
-    keys.find(key => key !== categoryKey) ?? '';
+  const metricKey = keys.find(key => key !== categoryKey) ?? '';
 
   const normalized = data
     .map(row => ({

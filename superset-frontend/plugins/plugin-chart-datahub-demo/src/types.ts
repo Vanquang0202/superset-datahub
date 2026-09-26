@@ -32,8 +32,7 @@ export interface PluginChartDatahubDemoStylesProps {
 
 export type PluginChartDatahubDemoQueryFormData = QueryFormData;
 
-export interface PluginChartDatahubDemoProps
-  extends PluginChartDatahubDemoStylesProps {
+export interface PluginChartDatahubDemoProps extends PluginChartDatahubDemoStylesProps {
   items: DataHubLollipopItem[];
   categoryLabel: string;
   metricLabel: string;
