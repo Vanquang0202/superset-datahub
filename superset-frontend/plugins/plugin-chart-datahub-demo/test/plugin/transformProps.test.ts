@@ -17,6 +17,7 @@
  * under the License.
  */
 
+import { supersetTheme } from '@apache-superset/core/ui';
 import { ChartProps } from '@superset-ui/core';
 import transformProps from '../../src/plugin/transformProps';
 
@@ -38,6 +39,7 @@ describe('PluginChartDatahubDemo transformProps', () => {
         ],
       },
     ],
+    theme: supersetTheme,
   });
 
   test('should transform chart props for lollipop visualization', () => {

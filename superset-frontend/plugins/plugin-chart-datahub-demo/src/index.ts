@@ -25,4 +25,3 @@ export { default as PluginChartDatahubDemo } from './plugin';
  * OR export multiple instances of `ChartPlugin` extensions in ./plugin/index.ts
  * which in turn load exports from PluginChartDatahubDemo.tsx
  */
-
