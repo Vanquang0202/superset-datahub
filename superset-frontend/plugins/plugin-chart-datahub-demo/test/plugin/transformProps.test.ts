@@ -40,7 +40,7 @@ describe('PluginChartDatahubDemo transformProps', () => {
     ],
   });
 
-  it('should transform chart props for lollipop visualization', () => {
+  test('should transform chart props for lollipop visualization', () => {
     expect(transformProps(chartProps)).toEqual({
       width: 800,
       height: 600,

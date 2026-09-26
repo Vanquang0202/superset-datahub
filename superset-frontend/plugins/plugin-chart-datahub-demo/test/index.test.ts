@@ -27,7 +27,7 @@ import { PluginChartDatahubDemo } from '../src';
  * properly transform the data and/or any resulting props).
  */
 describe('plugin-chart-datahub-demo', () => {
-  it('exists', () => {
+  test('exists', () => {
     expect(PluginChartDatahubDemo).toBeDefined();
   });
 });
