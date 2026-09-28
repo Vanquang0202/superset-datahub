@@ -1,0 +1,4 @@
+services:
+  superset:
+    extra_hosts:
+      - "keycloak.local:host-gateway"
