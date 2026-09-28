@@ -111,6 +111,7 @@ def _configure_keycloak_issuer(client: _AuthlibOAuthClient) -> None:
     """Validate Keycloak tokens against the issuer exposed to the browser."""
     client.metadata["issuer"] = KEYCLOAK_BROWSER_REALM_URL
 
+
 # Keycloak authenticates the user; DataHubSecurityManager maps its claims to
 # Superset roles after the OAuth callback returns to this application.
 CUSTOM_SECURITY_MANAGER = DataHubSecurityManager
