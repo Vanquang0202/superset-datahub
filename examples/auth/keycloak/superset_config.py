@@ -78,7 +78,7 @@ def _configure_keycloak_templates(app: Flask) -> None:
         app.jinja_loader = demo_loader
 
 
-FLASK_APP_MUTATOR: Callable[[Flask], None] = _configure_keycloak_templates
+globals()["FLASK_APP_MUTATOR"] = _configure_keycloak_templates
 
 KEYCLOAK_BROWSER_BASE_URL = os.environ.get(
     "KEYCLOAK_BROWSER_BASE_URL", "http://localhost:8081"
