@@ -71,16 +71,14 @@ def _configure_keycloak_templates(app: Flask) -> None:
     demo_loader = FileSystemLoader(KEYCLOAK_TEMPLATE_DIR)
     existing_loader = app.jinja_loader
     if isinstance(existing_loader, ChoiceLoader):
-        app.jinja_loader = ChoiceLoader(
-            [demo_loader, *existing_loader.loaders]
-        )
+        app.jinja_loader = ChoiceLoader([demo_loader, *existing_loader.loaders])
     elif existing_loader:
         app.jinja_loader = ChoiceLoader([demo_loader, existing_loader])
     else:
         app.jinja_loader = demo_loader
 
 
-FLASK_APP_MUTATOR = _configure_keycloak_templates
+FLASK_APP_MUTATOR: Callable[[Flask], None] = _configure_keycloak_templates
 
 KEYCLOAK_BROWSER_BASE_URL = os.environ.get(
     "KEYCLOAK_BROWSER_BASE_URL", "http://localhost:8081"
@@ -95,12 +93,8 @@ KEYCLOAK_POST_LOGOUT_REDIRECT_URI = os.environ.get(
     "KEYCLOAK_POST_LOGOUT_REDIRECT_URI", "http://127.0.0.1:8089/login/"
 )
 
-KEYCLOAK_BROWSER_REALM_URL = (
-    f"{KEYCLOAK_BROWSER_BASE_URL}/realms/{KEYCLOAK_REALM}"
-)
-KEYCLOAK_INTERNAL_REALM_URL = (
-    f"{KEYCLOAK_INTERNAL_BASE_URL}/realms/{KEYCLOAK_REALM}"
-)
+KEYCLOAK_BROWSER_REALM_URL = f"{KEYCLOAK_BROWSER_BASE_URL}/realms/{KEYCLOAK_REALM}"
+KEYCLOAK_INTERNAL_REALM_URL = f"{KEYCLOAK_INTERNAL_BASE_URL}/realms/{KEYCLOAK_REALM}"
 
 
 class _AuthlibOAuthClient(Protocol):

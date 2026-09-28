@@ -232,9 +232,7 @@ class DataHubSecurityManager(SupersetSecurityManager):
         easy to review in a demo.  Unknown identities receive the configured
         registration role (Public) and do not inherit Admin or Gamma.
         """
-        external_roles = {
-            str(role) for role in userinfo.get("role_keys", []) if role
-        }
+        external_roles = {str(role) for role in userinfo.get("role_keys", []) if role}
         role_names = {
             self.EXTERNAL_ROLE_MAPPING[role]
             for role in external_roles
