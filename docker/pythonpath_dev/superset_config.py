@@ -26,6 +26,7 @@ import sys
 
 from celery.schedules import crontab
 from flask_caching.backends.filesystemcache import FileSystemCache
+from superset.utils.core import parse_boolean_string
 
 logger = logging.getLogger()
 
@@ -65,19 +66,31 @@ REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = os.getenv("REDIS_PORT", "6379")
 REDIS_CELERY_DB = os.getenv("REDIS_CELERY_DB", "0")
 REDIS_RESULTS_DB = os.getenv("REDIS_RESULTS_DB", "1")
+REDIS_CACHE_DB = os.getenv("REDIS_CACHE_DB", REDIS_RESULTS_DB)
+
+CACHE_DEFAULT_TIMEOUT = int(os.getenv("SUPERSET_CACHE_DEFAULT_TIMEOUT", "300"))
+CACHE_KEY_PREFIX = os.getenv("SUPERSET_CACHE_KEY_PREFIX", "superset_")
+CACHE_WARMUP_ENABLED = parse_boolean_string(os.getenv("SUPERSET_CACHE_WARMUP_ENABLED"))
+CACHE_WARMUP_SCHEDULE_MINUTE = os.getenv("SUPERSET_CACHE_WARMUP_SCHEDULE_MINUTE", "0")
+CACHE_WARMUP_TOP_N = int(os.getenv("SUPERSET_CACHE_WARMUP_TOP_N", "10"))
+CACHE_WARMUP_SINCE = os.getenv("SUPERSET_CACHE_WARMUP_SINCE", "7 days ago")
 
 RESULTS_BACKEND = FileSystemCache("/app/superset_home/sqllab")
 
 CACHE_CONFIG = {
     "CACHE_TYPE": "RedisCache",
-    "CACHE_DEFAULT_TIMEOUT": 300,
-    "CACHE_KEY_PREFIX": "superset_",
+    "CACHE_DEFAULT_TIMEOUT": CACHE_DEFAULT_TIMEOUT,
+    "CACHE_KEY_PREFIX": CACHE_KEY_PREFIX,
     "CACHE_REDIS_HOST": REDIS_HOST,
     "CACHE_REDIS_PORT": REDIS_PORT,
-    "CACHE_REDIS_DB": REDIS_RESULTS_DB,
+    "CACHE_REDIS_DB": REDIS_CACHE_DB,
 }
 DATA_CACHE_CONFIG = CACHE_CONFIG
 THUMBNAIL_CACHE_CONFIG = CACHE_CONFIG
+
+# Global async queries use the existing Redis-backed cache for coordination.
+GLOBAL_ASYNC_QUERIES_CACHE_BACKEND = CACHE_CONFIG
+GLOBAL_ASYNC_QUERIES_JWT_SECRET = os.environ["SUPERSET_SECRET_KEY"]
 
 
 class CeleryConfig:
@@ -101,17 +114,34 @@ class CeleryConfig:
             "schedule": crontab(minute=10, hour=0),
         },
     }
+    if CACHE_WARMUP_ENABLED:
+        beat_schedule["cache-warmup-hourly"] = {
+            "task": "cache-warmup",
+            "schedule": crontab(minute=CACHE_WARMUP_SCHEDULE_MINUTE, hour="*"),
+            "kwargs": {
+                "strategy_name": "top_n_dashboards",
+                "top_n": CACHE_WARMUP_TOP_N,
+                "since": CACHE_WARMUP_SINCE,
+            },
+        }
 
 
 CELERY_CONFIG = CeleryConfig
 
-FEATURE_FLAGS = {"ALERT_REPORTS": True, "DATASET_FOLDERS": True}
+FEATURE_FLAGS = {
+    "ALERT_REPORTS": True,
+    "DATASET_FOLDERS": True,
+    "GLOBAL_ASYNC_QUERIES": True,
+}
+_LOCAL_FEATURE_FLAGS = FEATURE_FLAGS.copy()
 ALERT_REPORTS_NOTIFICATION_DRY_RUN = True
-WEBDRIVER_BASEURL = f"http://superset_app{os.environ.get('SUPERSET_APP_ROOT', '/')}/"  # When using docker compose baseurl should be http://superset_nginx{ENV{BASEPATH}}/  # noqa: E501
-# The base URL for the email report hyperlinks.
-WEBDRIVER_BASEURL_USER_FRIENDLY = (
-    f"http://localhost:8888/{os.environ.get('SUPERSET_APP_ROOT', '/')}/"
+SUPERSET_APP_ROOT = os.environ.get("SUPERSET_APP_ROOT", "/")
+WEBDRIVER_BASEURL = os.getenv(
+    "SUPERSET_WEBDRIVER_BASEURL",
+    f"http://superset:8088{SUPERSET_APP_ROOT.rstrip('/')}/",
 )
+# The base URL for the email report hyperlinks.
+WEBDRIVER_BASEURL_USER_FRIENDLY = f"http://localhost:8888/{SUPERSET_APP_ROOT}/"
 SQLLAB_CTAS_NO_LIMIT = True
 
 log_level_text = os.getenv("SUPERSET_LOG_LEVEL", "INFO")
@@ -142,3 +172,6 @@ try:
     )
 except ImportError:
     logger.info("Using default Docker config...")
+
+# Preserve local feature flags after the optional Docker override's wildcard import.
+FEATURE_FLAGS.update(_LOCAL_FEATURE_FLAGS)

@@ -106,6 +106,7 @@ import isDashboardLoading, {
 import { useChartIds } from '../../util/charts/useChartIds';
 import { useDashboardMetadataBar } from './useDashboardMetadataBar';
 import { useHeaderActionsMenu } from './useHeaderActionsDropdownMenu';
+import DashboardPerformanceStatus from '../DashboardPerformanceStatus';
 
 const extensionsRegistry = getExtensionsRegistry();
 
@@ -217,6 +218,7 @@ const Header = (): ReactElement => {
   const dataMask = useSelector((state: RootState) => state.dataMask);
   const user = useSelector((state: RootState) => state.user);
   const chartIds = useChartIds();
+  const charts = useSelector((state: RootState) => state.charts);
 
   const {
     expandedSlices,
@@ -666,6 +668,9 @@ const Header = (): ReactElement => {
         />
       ),
       !editMode && !isEmbedded && metadataBar,
+      !editMode && (
+        <DashboardPerformanceStatus charts={charts} chartIds={chartIds} />
+      ),
     ],
     [
       boundActionCreators.savePublished,
@@ -673,6 +678,8 @@ const Header = (): ReactElement => {
       editMode,
       metadataBar,
       isEmbedded,
+      charts,
+      chartIds,
       isPublished,
       userCanEdit,
       userCanSaveAs,
