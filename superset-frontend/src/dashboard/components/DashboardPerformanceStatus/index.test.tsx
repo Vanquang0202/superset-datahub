@@ -20,8 +20,7 @@ import {
   formatDashboardLoadDuration,
   getDashboardPerformanceSnapshot,
 } from './index';
-import type { ChartState } from 'src/explore/types';
-import type { ChartsState } from 'src/dashboard/types';
+import type { Chart, ChartsState } from 'src/dashboard/types';
 
 const chart = (overrides: Record<string, unknown> = {}) =>
   ({
@@ -29,10 +28,16 @@ const chart = (overrides: Record<string, unknown> = {}) =>
     chartUpdateStartTime: 1_000,
     chartUpdateEndTime: 2_250,
     queriesResponse: [{ is_cached: false }],
+    form_data: {
+      viz_type: 'table',
+      datasource: '1__table',
+      color_scheme: 'supersetColors',
+      slice_id: 1,
+    },
     ...overrides,
-  }) as unknown as ChartState;
+  }) as unknown as Chart;
 
-const charts = (value: ChartState): ChartsState => ({ 1: value });
+const charts = (value: Chart): ChartsState => ({ 1: value });
 
 test('reports processing while a chart is loading', () => {
   expect(
