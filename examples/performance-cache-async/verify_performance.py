@@ -101,8 +101,12 @@ def check_redis(
     try:
         client, host, db = redis_connection(config)
         client.ping()
-        prefix = (config or {}).get("CACHE_CONFIG", {}).get(
-            "CACHE_KEY_PREFIX", os.getenv("SUPERSET_CACHE_KEY_PREFIX", "superset_")
+        prefix = (
+            (config or {})
+            .get("CACHE_CONFIG", {})
+            .get(
+                "CACHE_KEY_PREFIX", os.getenv("SUPERSET_CACHE_KEY_PREFIX", "superset_")
+            )
         )
         keys = list(client.scan_iter(match=f"{prefix}*"))
         ttl = client.ttl(keys[0]) if keys else None
@@ -246,8 +250,7 @@ def benchmark(
     print(f"warm load: {warm:.3f}s")
     print(f"difference: {delta:.3f}s")
     print(
-        "improvement percentage: "
-        f"{improvement:.1f}%"
+        f"improvement percentage: {improvement:.1f}%"
         if improvement is not None
         else "improvement percentage: n/a"
     )
@@ -259,15 +262,10 @@ def benchmark(
         f"before={before_ttl if before_ttl is not None else 'n/a'}, "
         f"after={after_ttl if after_ttl is not None else 'n/a'}"
     )
-    print(
-        "async task status: inspect Celery logs; HTTP 202 indicates async acceptance"
-    )
+    print("async task status: inspect Celery logs; HTTP 202 indicates async acceptance")
 
     # Keep the raw measurements available for technical validation.
-    print(
-        f"benchmark: chart_id={chart_id} "
-        f"statuses={statuses}"
-    )
+    print(f"benchmark: chart_id={chart_id} statuses={statuses}")
     print(f"benchmark: durations={[round(duration, 3) for duration in durations]}")
     print(f"benchmark: redis_keys_before={before_keys} redis_keys_after={after_keys}")
 
@@ -312,12 +310,12 @@ def warmup(
 def parse_args() -> argparse.Namespace:
     """Parse command-line options."""
     default_config = Path(
-        os.getenv(
-            "SUPERSET_CONFIG_PATH", "docker/pythonpath_dev/superset_config.py"
-        )
+        os.getenv("SUPERSET_CONFIG_PATH", "docker/pythonpath_dev/superset_config.py")
     )
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--superset-url", default=os.getenv("SUPERSET_URL", "http://localhost:8088"))
+    parser.add_argument(
+        "--superset-url", default=os.getenv("SUPERSET_URL", "http://localhost:8088")
+    )
     parser.add_argument("--chart-id", help="Saved chart ID; no default is assumed")
     parser.add_argument("--runs", type=int, default=2)
     parser.add_argument("--timeout", type=float, default=30.0)

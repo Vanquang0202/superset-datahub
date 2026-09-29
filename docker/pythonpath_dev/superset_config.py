@@ -70,9 +70,7 @@ REDIS_CACHE_DB = os.getenv("REDIS_CACHE_DB", REDIS_RESULTS_DB)
 
 CACHE_DEFAULT_TIMEOUT = int(os.getenv("SUPERSET_CACHE_DEFAULT_TIMEOUT", "300"))
 CACHE_KEY_PREFIX = os.getenv("SUPERSET_CACHE_KEY_PREFIX", "superset_")
-CACHE_WARMUP_ENABLED = parse_boolean_string(
-    os.getenv("SUPERSET_CACHE_WARMUP_ENABLED")
-)
+CACHE_WARMUP_ENABLED = parse_boolean_string(os.getenv("SUPERSET_CACHE_WARMUP_ENABLED"))
 CACHE_WARMUP_SCHEDULE_MINUTE = os.getenv("SUPERSET_CACHE_WARMUP_SCHEDULE_MINUTE", "0")
 CACHE_WARMUP_TOP_N = int(os.getenv("SUPERSET_CACHE_WARMUP_TOP_N", "10"))
 CACHE_WARMUP_SINCE = os.getenv("SUPERSET_CACHE_WARMUP_SINCE", "7 days ago")
@@ -143,9 +141,7 @@ WEBDRIVER_BASEURL = os.getenv(
     f"http://superset:8088{SUPERSET_APP_ROOT.rstrip('/')}/",
 )
 # The base URL for the email report hyperlinks.
-WEBDRIVER_BASEURL_USER_FRIENDLY = (
-    f"http://localhost:8888/{SUPERSET_APP_ROOT}/"
-)
+WEBDRIVER_BASEURL_USER_FRIENDLY = f"http://localhost:8888/{SUPERSET_APP_ROOT}/"
 SQLLAB_CTAS_NO_LIMIT = True
 
 log_level_text = os.getenv("SUPERSET_LOG_LEVEL", "INFO")
