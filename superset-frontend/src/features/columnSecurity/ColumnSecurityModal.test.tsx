@@ -91,6 +91,7 @@ test('loads columns after selecting a dataset and submits runtime IDs', async ()
 
   const name = screen.getAllByRole('textbox')[0];
   await userEvent.type(name, 'policy');
+  await waitFor(() => expect(name).toHaveValue('policy'));
   await selectOption('demo_dataset', 'Dataset');
 
   const rolesSelect = await screen.findByRole('combobox', { name: 'Roles' });
