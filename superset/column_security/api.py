@@ -31,6 +31,7 @@ from superset import db, security_manager
 from superset.column_security.schemas import (
     ColumnSecurityPolicySchema,
     ColumnSecurityPolicyUpdateSchema,
+    openapi_spec_methods_override,
 )
 from superset.connectors.sqla.models import (
     ColumnSecurityPolicy,
@@ -51,6 +52,7 @@ class ColumnSecurityRestApi(BaseSupersetModelRestApi):
     method_permission_name = MODEL_API_RW_METHOD_PERMISSION_MAP
     allow_browser_login = True
     openapi_spec_tag = "Column Level Security"
+    openapi_spec_methods = openapi_spec_methods_override
 
     @staticmethod
     def _serialize(policy: ColumnSecurityPolicy) -> dict[str, Any]:
@@ -85,12 +87,11 @@ class ColumnSecurityRestApi(BaseSupersetModelRestApi):
         """Read the common related-resource query parameters."""
         import prison
 
-        query = request.args.get("q", "")
         page = 0
         page_size = 25
         values: dict[str, Any] = {}
 
-        if query:
+        if query := request.args.get("q", ""):
             values = prison.loads(query)
             page = int(values.get("page", page))
             page_size = int(values.get("page_size", page_size))
@@ -152,8 +153,7 @@ class ColumnSecurityRestApi(BaseSupersetModelRestApi):
         if exclude_policy_id is not None:
             query = query.filter(ColumnSecurityPolicy.id != exclude_policy_id)
 
-        duplicate_roles = sorted({name for (name,) in query.all()})
-        if duplicate_roles:
+        if duplicate_roles := sorted({name for (name,) in query.all()}):
             raise ValueError(
                 "The following roles already have a Column Level Security policy "
                 "for this dataset: "

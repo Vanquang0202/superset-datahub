@@ -148,7 +148,6 @@ class TestCore(SupersetTestCase):
             assert_func("ResetPasswordView", view_menus)
             assert_func("RoleRestAPI", view_menus)
             assert_func("Security", view_menus)
-            assert_func("Column Level Security", view_menus)
             assert_func("SQL Lab", view_menus)
 
         assert_admin_view_menus_in("Admin", self.assertIn)

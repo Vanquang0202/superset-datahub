@@ -32,11 +32,7 @@ import {
 } from '@superset-ui/core/components';
 import rison from 'rison';
 import { useSingleViewResource } from 'src/views/CRUD/hooks';
-import type {
-  ColumnSecurityPolicy,
-  PolicyOption,
-  SelectValue,
-} from './types';
+import type { ColumnSecurityPolicy, PolicyOption, SelectValue } from './types';
 
 const StyledSection = styled.div`
   ${({ theme }) => css`
@@ -145,51 +141,58 @@ function ColumnSecurityModal({
   }, [policy, resource]);
 
   const loadDatasets = useMemo(
-    () => (input = '', page: number, pageSize: number) =>
-      SupersetClient.get({
-        endpoint: `/api/v1/columnsecurity/related/datasets?q=${queryOptions(input, page, pageSize)}`,
-      }).then(response => ({
-        data: response.json.result.map((item: { value: number; text: string }) => ({
-          value: item.value,
-          label: item.text,
+    () =>
+      (input = '', page: number, pageSize: number) =>
+        SupersetClient.get({
+          endpoint: `/api/v1/columnsecurity/related/datasets?q=${queryOptions(input, page, pageSize)}`,
+        }).then(response => ({
+          data: response.json.result.map(
+            (item: { value: number; text: string }) => ({
+              value: item.value,
+              label: item.text,
+            }),
+          ),
+          totalCount: response.json.count,
         })),
-        totalCount: response.json.count,
-      })),
     [],
   );
 
   const loadRoles = useMemo(
-    () => (input = '', page: number, pageSize: number) =>
-      SupersetClient.get({
-        endpoint: dataset
-          ? `/api/v1/columnsecurity/related/roles/${dataset.value}?q=${queryOptions(input, page, pageSize)}${policy?.id ? `&policy_id=${policy.id}` : ''}`
-          : `/api/v1/columnsecurity/related/roles?q=${queryOptions(input, page, pageSize)}`,
-      }).then(response => ({
-        data: response.json.result.map(
-          (item: { value: number; text: string; disabled?: boolean }) => ({
-            value: item.value,
-            label: item.text,
-            disabled: item.disabled,
-          }),
-        ),
-        totalCount: response.json.count,
-      })),
+    () =>
+      (input = '', page: number, pageSize: number) =>
+        SupersetClient.get({
+          endpoint: dataset
+            ? `/api/v1/columnsecurity/related/roles/${dataset.value}?q=${queryOptions(input, page, pageSize)}${policy?.id ? `&policy_id=${policy.id}` : ''}`
+            : `/api/v1/columnsecurity/related/roles?q=${queryOptions(input, page, pageSize)}`,
+        }).then(response => ({
+          data: response.json.result.map(
+            (item: { value: number; text: string; disabled?: boolean }) => ({
+              value: item.value,
+              label: item.text,
+              disabled: item.disabled,
+            }),
+          ),
+          totalCount: response.json.count,
+        })),
     [dataset, policy?.id],
   );
 
   const loadColumns = useMemo(
-    () => (input = '', page: number, pageSize: number) => {
-      if (!dataset) return Promise.resolve({ data: [], totalCount: 0 });
-      return SupersetClient.get({
-        endpoint: `/api/v1/columnsecurity/related/columns/${dataset.value}?q=${queryOptions(input, page, pageSize)}`,
-      }).then(response => ({
-        data: response.json.result.map((item: { value: number; text: string }) => ({
-          value: item.value,
-          label: item.text,
-        })),
-        totalCount: response.json.count,
-      }));
-    },
+    () =>
+      (input = '', page: number, pageSize: number) => {
+        if (!dataset) return Promise.resolve({ data: [], totalCount: 0 });
+        return SupersetClient.get({
+          endpoint: `/api/v1/columnsecurity/related/columns/${dataset.value}?q=${queryOptions(input, page, pageSize)}`,
+        }).then(response => ({
+          data: response.json.result.map(
+            (item: { value: number; text: string }) => ({
+              value: item.value,
+              label: item.text,
+            }),
+          ),
+          totalCount: response.json.count,
+        }));
+      },
     [dataset],
   );
 
@@ -229,7 +232,9 @@ function ColumnSecurityModal({
       }
       onHide();
     } catch (error) {
-      addDangerToast(error instanceof Error ? error.message : t('Unable to save policy'));
+      addDangerToast(
+        error instanceof Error ? error.message : t('Unable to save policy'),
+      );
     } finally {
       setSaving(false);
     }

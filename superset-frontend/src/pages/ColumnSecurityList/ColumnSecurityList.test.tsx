@@ -18,6 +18,8 @@
  */
 
 import fetchMock from 'fetch-mock';
+import { QueryParamProvider } from 'use-query-params';
+import { ReactRouter5Adapter } from 'use-query-params/adapters/react-router-5';
 import { MemoryRouter } from 'react-router-dom';
 import { render, screen } from 'spec/helpers/testing-library';
 import { ColumnSecurityList } from '.';
@@ -45,10 +47,12 @@ fetchMock.get(infoEndpoint, {
 test('renders the Column Level Security policy list and create action', async () => {
   render(
     <MemoryRouter>
-      <ColumnSecurityList
-        addDangerToast={jest.fn()}
-        addSuccessToast={jest.fn()}
-      />
+      <QueryParamProvider adapter={ReactRouter5Adapter}>
+        <ColumnSecurityList
+          addDangerToast={jest.fn()}
+          addSuccessToast={jest.fn()}
+        />
+      </QueryParamProvider>
     </MemoryRouter>,
     { useRedux: true },
   );

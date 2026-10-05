@@ -21,10 +21,7 @@ import { t } from '@apache-superset/core';
 import { SupersetClient } from '@superset-ui/core';
 import { useMemo, useState } from 'react';
 import { ConfirmStatusChange } from '@superset-ui/core/components';
-import {
-  ListView,
-  type ListViewProps,
-} from 'src/components';
+import { ListView, type ListViewProps } from 'src/components';
 import withToasts from 'src/components/MessageToasts/withToasts';
 import SubMenu from 'src/features/home/SubMenu';
 import { Icons } from '@superset-ui/core/components/Icons';
@@ -67,13 +64,17 @@ export function ColumnSecurityList({
   };
 
   const deletePolicy = (policy: ColumnSecurityPolicy) =>
-    SupersetClient.delete({ endpoint: `/api/v1/columnsecurity/${policy.id}` }).then(
+    SupersetClient.delete({
+      endpoint: `/api/v1/columnsecurity/${policy.id}`,
+    }).then(
       () => {
         refreshData();
         addSuccessToast(t('Deleted %s', policy.name));
       },
       createErrorHandler(message =>
-        addDangerToast(t('There was an issue deleting %s: %s', policy.name, message)),
+        addDangerToast(
+          t('There was an issue deleting %s: %s', policy.name, message),
+        ),
       ),
     );
 
@@ -84,7 +85,11 @@ export function ColumnSecurityList({
         accessor: 'table.table_name',
         Header: t('Dataset'),
         id: 'table.table_name',
-        Cell: ({ row: { original } }: { row: { original: ColumnSecurityPolicy } }) =>
+        Cell: ({
+          row: { original },
+        }: {
+          row: { original: ColumnSecurityPolicy };
+        }) =>
           original.table?.schema
             ? `${original.table.schema}.${original.table.table_name}`
             : original.table?.table_name,
@@ -93,29 +98,42 @@ export function ColumnSecurityList({
         accessor: 'roles',
         Header: t('Roles'),
         id: 'roles',
-        Cell: ({ row: { original } }: { row: { original: ColumnSecurityPolicy } }) =>
-          original.roles.map(role => role.label).join(', '),
+        Cell: ({
+          row: { original },
+        }: {
+          row: { original: ColumnSecurityPolicy };
+        }) => original.roles.map(role => role.label).join(', '),
       },
       {
         accessor: 'columns',
         Header: t('Allowed Columns'),
         id: 'columns',
-        Cell: ({ row: { original } }: { row: { original: ColumnSecurityPolicy } }) =>
-          original.columns.map(column => column.label).join(', '),
+        Cell: ({
+          row: { original },
+        }: {
+          row: { original: ColumnSecurityPolicy };
+        }) => original.columns.map(column => column.label).join(', '),
       },
       {
         accessor: 'enabled',
         Header: t('Enabled'),
         id: 'enabled',
-        Cell: ({ row: { original } }: { row: { original: ColumnSecurityPolicy } }) =>
-          original.enabled ? t('Yes') : t('No'),
+        Cell: ({
+          row: { original },
+        }: {
+          row: { original: ColumnSecurityPolicy };
+        }) => (original.enabled ? t('Yes') : t('No')),
       },
       {
         accessor: 'actions',
         Header: t('Actions'),
         id: 'actions',
         disableSortBy: true,
-        Cell: ({ row: { original } }: { row: { original: ColumnSecurityPolicy } }) => (
+        Cell: ({
+          row: { original },
+        }: {
+          row: { original: ColumnSecurityPolicy };
+        }) => (
           <div className="actions">
             {hasPerm('can_write') && (
               <button type="button" onClick={() => openPolicy(original)}>
@@ -125,7 +143,10 @@ export function ColumnSecurityList({
             {hasPerm('can_write') && (
               <ConfirmStatusChange
                 title={t('Please confirm')}
-                description={t('Are you sure you want to delete %s?', original.name)}
+                description={t(
+                  'Are you sure you want to delete %s?',
+                  original.name,
+                )}
                 onConfirm={() => deletePolicy(original)}
               >
                 {confirmDelete => (

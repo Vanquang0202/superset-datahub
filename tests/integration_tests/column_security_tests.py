@@ -104,22 +104,30 @@ class TestColumnSecurityAdminAPI(SupersetTestCase):
             db.session.delete(second)
             db.session.commit()
 
+    @staticmethod
+    def _get_policy_datasets() -> tuple[SqlaTable, SqlaTable]:
+        """Return the datasets created by the policy_datasets fixture."""
+        first = (
+            db.session.query(SqlaTable)
+            .filter(SqlaTable.table_name.like("cls_api_%"))
+            .order_by(SqlaTable.__table__.c.id.desc())
+            .first()
+        )
+        second = (
+            db.session.query(SqlaTable)
+            .filter(SqlaTable.table_name.like("cls_other_%"))
+            .order_by(SqlaTable.__table__.c.id.desc())
+            .first()
+        )
+        assert first is not None
+        assert second is not None
+        return first, second
+
     @pytest.mark.usefixtures("policy_datasets")
     def test_policy_crud_and_dataset_column_validation(self) -> None:
         self.login(ADMIN_USERNAME)
-        first, second = (
-            db.session.query(SqlaTable)
-            .filter(SqlaTable.table_name.like("cls_api_%"))
-            .order_by(SqlaTable.id.desc())
-            .first(),
-            db.session.query(SqlaTable)
-            .filter(SqlaTable.table_name.like("cls_other_%"))
-            .order_by(SqlaTable.id.desc())
-            .first(),
-        )
+        first, second = self._get_policy_datasets()
         role = security_manager.find_role("Alpha")
-        assert first is not None
-        assert second is not None
         assert role is not None
 
         payload = {
@@ -167,12 +175,11 @@ class TestColumnSecurityAdminAPI(SupersetTestCase):
         assert response.status_code == 200
         assert db.session.get(ColumnSecurityPolicy, policy_id) is None
 
-    def test_policy_rejects_duplicate_role_on_same_dataset(
-        self, policy_datasets: tuple[SqlaTable, SqlaTable]
-    ) -> None:
+    @pytest.mark.usefixtures("policy_datasets")
+    def test_policy_rejects_duplicate_role_on_same_dataset(self) -> None:
         """A role can have only one policy per dataset."""
         self.login(ADMIN_USERNAME)
-        first, second = policy_datasets
+        first, second = self._get_policy_datasets()
         role = security_manager.find_role("Alpha")
         assert role is not None
 
@@ -199,12 +206,13 @@ class TestColumnSecurityAdminAPI(SupersetTestCase):
         for response in (first_response, different_dataset_response):
             self.client.delete(f"/api/v1/columnsecurity/{response.json['id']}")
 
+    @pytest.mark.usefixtures("policy_datasets")
     def test_policy_update_allows_own_roles_and_rejects_other_policy_roles(
-        self, policy_datasets: tuple[SqlaTable, SqlaTable]
+        self,
     ) -> None:
         """Updates exclude the policy being edited from duplicate checks."""
         self.login(ADMIN_USERNAME)
-        first, _ = policy_datasets
+        first, _ = self._get_policy_datasets()
         own_role = security_manager.find_role("Alpha")
         other_role = security_manager.find_role("Gamma")
         assert own_role is not None
@@ -241,12 +249,11 @@ class TestColumnSecurityAdminAPI(SupersetTestCase):
             self.client.delete(f"/api/v1/columnsecurity/{own_policy_id}")
             self.client.delete(f"/api/v1/columnsecurity/{other_policy_id}")
 
-    def test_policy_supports_multiple_roles(
-        self, policy_datasets: tuple[SqlaTable, SqlaTable]
-    ) -> None:
+    @pytest.mark.usefixtures("policy_datasets")
+    def test_policy_supports_multiple_roles(self) -> None:
         """One policy can continue to contain multiple roles."""
         self.login(ADMIN_USERNAME)
-        first, _ = policy_datasets
+        first, _ = self._get_policy_datasets()
         roles = [
             security_manager.find_role("Alpha"),
             security_manager.find_role("Gamma"),

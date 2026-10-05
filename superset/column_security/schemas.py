@@ -19,6 +19,22 @@ from marshmallow import fields, Schema
 from marshmallow.validate import Length
 
 
+openapi_spec_methods_override = {
+    "get": {"get": {"summary": "Get a column security policy"}},
+    "get_list": {
+        "get": {
+            "summary": "Get a list of column security policies",
+            "description": "Gets a list of column security policies, use Rison or "
+            "JSON query parameters for pagination and metadata.",
+        }
+    },
+    "post": {"post": {"summary": "Create a column security policy"}},
+    "put": {"put": {"summary": "Update a column security policy"}},
+    "delete": {"delete": {"summary": "Delete a column security policy"}},
+    "info": {"get": {"summary": "Get metadata information about this API resource"}},
+}
+
+
 class ColumnSecurityPolicySchema(Schema):
     """Payload for creating or updating a column security policy."""
 

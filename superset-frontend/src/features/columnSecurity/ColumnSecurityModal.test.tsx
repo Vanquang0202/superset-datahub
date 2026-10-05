@@ -31,8 +31,7 @@ import ColumnSecurityModal, {
 
 const datasetsEndpoint = 'glob:*/api/v1/columnsecurity/related/datasets?q=*';
 const rolesEndpoint = 'glob:*/api/v1/columnsecurity/related/roles?q=*';
-const datasetRolesEndpoint =
-  'glob:*/api/v1/columnsecurity/related/roles/1?q=*';
+const datasetRolesEndpoint = 'glob:*/api/v1/columnsecurity/related/roles/1?q=*';
 const columnsEndpoint = 'glob:*/api/v1/columnsecurity/related/columns/1?q=*';
 const postEndpoint = 'glob:*/api/v1/columnsecurity/';
 const policyEndpoint = 'glob:*/api/v1/columnsecurity/1';
@@ -90,7 +89,7 @@ test('renders the create policy form with dataset-dependent columns disabled', (
 test('loads columns after selecting a dataset and submits runtime IDs', async () => {
   render(<ColumnSecurityModal {...defaultProps} />, { useRedux: true });
 
-  const name = screen.getByLabelText('Policy Name');
+  const name = screen.getAllByRole('textbox')[0];
   await userEvent.type(name, 'policy');
   await selectOption('demo_dataset', 'Dataset');
   await selectOption('field_test', 'Roles');
@@ -126,7 +125,11 @@ test('loads an existing policy and updates it', async () => {
     { useRedux: true },
   );
 
-  expect(await screen.findByDisplayValue('existing policy')).toBeInTheDocument();
+  expect(
+    await screen.findByDisplayValue('existing policy'),
+  ).toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: /save/i }));
-  await waitFor(() => expect(fetchMock.callHistory.calls(putEndpoint)).toHaveLength(1));
+  await waitFor(() =>
+    expect(fetchMock.callHistory.calls(putEndpoint)).toHaveLength(1),
+  );
 });
