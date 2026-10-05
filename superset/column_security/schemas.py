@@ -18,7 +18,6 @@
 from marshmallow import fields, Schema
 from marshmallow.validate import Length
 
-
 openapi_spec_methods_override = {
     "get": {"get": {"summary": "Get a column security policy"}},
     "get_list": {

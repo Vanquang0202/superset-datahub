@@ -81,7 +81,7 @@ class TestColumnSecurityAdminAPI(SupersetTestCase):
     """Exercise CRUD and relationship validation for the CLS admin API."""
 
     @pytest.fixture
-    def policy_datasets(self):
+    def policy_datasets(self, app_context: AppContext):
         first = SqlaTable(
             table_name=f"cls_api_{uuid4().hex}",
             database_id=1,
@@ -272,8 +272,8 @@ class TestColumnSecurityAdminAPI(SupersetTestCase):
         assert response.status_code == 201
         policy_id = response.json["id"]
         try:
-            assert {
-                role["id"] for role in response.json["result"]["roles"]
-            } == set(role_ids)
+            assert {role["id"] for role in response.json["result"]["roles"]} == set(
+                role_ids
+            )
         finally:
             self.client.delete(f"/api/v1/columnsecurity/{policy_id}")

@@ -92,7 +92,14 @@ test('loads columns after selecting a dataset and submits runtime IDs', async ()
   const name = screen.getAllByRole('textbox')[0];
   await userEvent.type(name, 'policy');
   await selectOption('demo_dataset', 'Dataset');
-  await selectOption('field_test', 'Roles');
+
+  const rolesSelect = await screen.findByRole('combobox', { name: 'Roles' });
+  await waitFor(() => expect(rolesSelect).toBeEnabled());
+  await userEvent.click(rolesSelect);
+  await waitFor(() =>
+    expect(fetchMock.callHistory.calls(datasetRolesEndpoint)).toHaveLength(1),
+  );
+  await userEvent.click(await screen.findByText('field_test'));
   await selectOption('don_vi', 'Allowed Columns');
 
   expect(fetchMock.callHistory.calls(columnsEndpoint)).toHaveLength(1);

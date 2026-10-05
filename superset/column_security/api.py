@@ -156,8 +156,7 @@ class ColumnSecurityRestApi(BaseSupersetModelRestApi):
         if duplicate_roles := sorted({name for (name,) in query.all()}):
             raise ValueError(
                 "The following roles already have a Column Level Security policy "
-                "for this dataset: "
-                + ", ".join(duplicate_roles)
+                "for this dataset: " + ", ".join(duplicate_roles)
             )
 
     @expose("/", methods=("GET",))
@@ -165,7 +164,24 @@ class ColumnSecurityRestApi(BaseSupersetModelRestApi):
     @safe
     @rison(get_list_schema)
     def get_list(self, **kwargs: Any) -> Response:
-        """Return policies for the admin list view."""
+        """Return policies for the admin list view.
+        ---
+        get:
+          summary: Get a list of column security policies
+          responses:
+            200:
+              description: Column security policies
+              content:
+                application/json:
+                  schema:
+                    type: object
+            401:
+              $ref: '#/components/responses/401'
+            403:
+              $ref: '#/components/responses/403'
+            500:
+              $ref: '#/components/responses/500'
+        """
         query = db.session.query(ColumnSecurityPolicy).order_by(
             ColumnSecurityPolicy.name
         )
@@ -183,7 +199,32 @@ class ColumnSecurityRestApi(BaseSupersetModelRestApi):
     @protect()
     @safe
     def get(self, pk: int) -> Response:
-        """Return one policy."""
+        """Return one policy.
+        ---
+        get:
+          summary: Get a column security policy
+          parameters:
+          - in: path
+            schema:
+              type: integer
+            name: pk
+            required: true
+          responses:
+            200:
+              description: Column security policy
+              content:
+                application/json:
+                  schema:
+                    type: object
+            401:
+              $ref: '#/components/responses/401'
+            403:
+              $ref: '#/components/responses/403'
+            404:
+              $ref: '#/components/responses/404'
+            500:
+              $ref: '#/components/responses/500'
+        """
         policy = db.session.get(ColumnSecurityPolicy, pk)
         if policy is None:
             return self.response_404()
@@ -194,7 +235,35 @@ class ColumnSecurityRestApi(BaseSupersetModelRestApi):
     @safe
     @requires_json
     def post(self) -> Response:
-        """Create a policy and its role/column mappings."""
+        """Create a policy and its role/column mappings.
+        ---
+        post:
+          summary: Create a column security policy
+          requestBody:
+            description: Column security policy schema
+            required: true
+            content:
+              application/json:
+                schema:
+                  type: object
+          responses:
+            201:
+              description: Column security policy added
+              content:
+                application/json:
+                  schema:
+                    type: object
+            400:
+              $ref: '#/components/responses/400'
+            401:
+              $ref: '#/components/responses/401'
+            403:
+              $ref: '#/components/responses/403'
+            422:
+              $ref: '#/components/responses/422'
+            500:
+              $ref: '#/components/responses/500'
+        """
         try:
             data = ColumnSecurityPolicySchema().load(request.json)
             self._validate_unique_roles(data["table_id"], data["roles"])
@@ -225,7 +294,43 @@ class ColumnSecurityRestApi(BaseSupersetModelRestApi):
     @safe
     @requires_json
     def put(self, pk: int) -> Response:
-        """Update a policy and replace supplied mappings."""
+        """Update a policy and replace supplied mappings.
+        ---
+        put:
+          summary: Update a column security policy
+          parameters:
+          - in: path
+            schema:
+              type: integer
+            name: pk
+            required: true
+          requestBody:
+            description: Column security policy schema
+            required: true
+            content:
+              application/json:
+                schema:
+                  type: object
+          responses:
+            200:
+              description: Column security policy changed
+              content:
+                application/json:
+                  schema:
+                    type: object
+            400:
+              $ref: '#/components/responses/400'
+            401:
+              $ref: '#/components/responses/401'
+            403:
+              $ref: '#/components/responses/403'
+            404:
+              $ref: '#/components/responses/404'
+            422:
+              $ref: '#/components/responses/422'
+            500:
+              $ref: '#/components/responses/500'
+        """
         policy = db.session.get(ColumnSecurityPolicy, pk)
         if policy is None:
             return self.response_404()
@@ -258,7 +363,32 @@ class ColumnSecurityRestApi(BaseSupersetModelRestApi):
     @protect()
     @safe
     def delete(self, pk: int) -> Response:
-        """Delete a policy and its relationship rows."""
+        """Delete a policy and its relationship rows.
+        ---
+        delete:
+          summary: Delete a column security policy
+          parameters:
+          - in: path
+            schema:
+              type: integer
+            name: pk
+            required: true
+          responses:
+            200:
+              description: Column security policy deleted
+              content:
+                application/json:
+                  schema:
+                    type: object
+            401:
+              $ref: '#/components/responses/401'
+            403:
+              $ref: '#/components/responses/403'
+            404:
+              $ref: '#/components/responses/404'
+            500:
+              $ref: '#/components/responses/500'
+        """
         policy = db.session.get(ColumnSecurityPolicy, pk)
         if policy is None:
             return self.response_404()
@@ -271,7 +401,24 @@ class ColumnSecurityRestApi(BaseSupersetModelRestApi):
     @safe
     @permission_name("read")
     def related_datasets(self) -> Response:
-        """Return datasets available to the policy editor."""
+        """Return datasets available to the policy editor.
+        ---
+        get:
+          summary: List datasets available to the policy editor
+          responses:
+            200:
+              description: Datasets
+              content:
+                application/json:
+                  schema:
+                    type: object
+            401:
+              $ref: '#/components/responses/401'
+            403:
+              $ref: '#/components/responses/403'
+            500:
+              $ref: '#/components/responses/500'
+        """
         filter_text, page, page_size = self._related_page()
         query = db.session.query(SqlaTable).order_by(SqlaTable.table_name)
         if filter_text:
@@ -298,7 +445,24 @@ class ColumnSecurityRestApi(BaseSupersetModelRestApi):
     @safe
     @permission_name("read")
     def related_roles(self) -> Response:
-        """Return Superset roles available to the policy editor."""
+        """Return Superset roles available to the policy editor.
+        ---
+        get:
+          summary: List roles available to the policy editor
+          responses:
+            200:
+              description: Roles
+              content:
+                application/json:
+                  schema:
+                    type: object
+            401:
+              $ref: '#/components/responses/401'
+            403:
+              $ref: '#/components/responses/403'
+            500:
+              $ref: '#/components/responses/500'
+        """
         filter_text, page, page_size = self._related_page()
         role_model = security_manager.role_model
         query = db.session.query(role_model).order_by(role_model.name)
@@ -316,7 +480,30 @@ class ColumnSecurityRestApi(BaseSupersetModelRestApi):
     @safe
     @permission_name("read")
     def related_roles_for_dataset(self, table_id: int) -> Response:
-        """Return roles with duplicate assignments disabled for a dataset."""
+        """Return roles with duplicate assignments disabled for a dataset.
+        ---
+        get:
+          summary: List roles for a dataset
+          parameters:
+          - in: path
+            schema:
+              type: integer
+            name: table_id
+            required: true
+          responses:
+            200:
+              description: Roles for the dataset
+              content:
+                application/json:
+                  schema:
+                    type: object
+            401:
+              $ref: '#/components/responses/401'
+            403:
+              $ref: '#/components/responses/403'
+            500:
+              $ref: '#/components/responses/500'
+        """
         filter_text, page, page_size = self._related_page()
         policy_id = request.args.get("policy_id", type=int)
         assigned_roles_query = (
@@ -358,7 +545,30 @@ class ColumnSecurityRestApi(BaseSupersetModelRestApi):
     @safe
     @permission_name("read")
     def related_columns(self, table_id: int) -> Response:
-        """Return columns belonging to the selected dataset."""
+        """Return columns belonging to the selected dataset.
+        ---
+        get:
+          summary: List columns for a dataset
+          parameters:
+          - in: path
+            schema:
+              type: integer
+            name: table_id
+            required: true
+          responses:
+            200:
+              description: Columns for the dataset
+              content:
+                application/json:
+                  schema:
+                    type: object
+            401:
+              $ref: '#/components/responses/401'
+            403:
+              $ref: '#/components/responses/403'
+            500:
+              $ref: '#/components/responses/500'
+        """
         filter_text, page, page_size = self._related_page()
         query = db.session.query(TableColumn).filter(TableColumn.table_id == table_id)
         if filter_text:
@@ -372,8 +582,7 @@ class ColumnSecurityRestApi(BaseSupersetModelRestApi):
         return self.response(
             200,
             result=[
-                {"value": column.id, "text": column.column_name}
-                for column in columns
+                {"value": column.id, "text": column.column_name} for column in columns
             ],
             count=query.count(),
         )
