@@ -87,9 +87,12 @@ test('renders the create policy form with dataset-dependent columns disabled', (
 });
 
 test('loads columns after selecting a dataset and submits runtime IDs', async () => {
-  render(<ColumnSecurityModal {...defaultProps} />, { useRedux: true });
+  const onHide = jest.fn();
+  render(<ColumnSecurityModal {...defaultProps} onHide={onHide} />, {
+    useRedux: true,
+  });
 
-  const name = screen.getAllByRole('textbox')[0];
+  const name = screen.getByLabelText('Policy Name');
   await userEvent.type(name, 'policy');
   await waitFor(() => expect(name).toHaveValue('policy'));
   await selectOption('demo_dataset', 'Dataset');
@@ -120,10 +123,10 @@ test('loads columns after selecting a dataset and submits runtime IDs', async ()
   await userEvent.click(await screen.findByRole('option', { name: 'don_vi' }));
 
   expect(fetchMock.callHistory.calls(columnsEndpoint)).toHaveLength(1);
-  await waitFor(() =>
-    expect(screen.getByRole('button', { name: /add/i })).toBeEnabled(),
-  );
-  await userEvent.click(screen.getByRole('button', { name: /add/i }));
+  const addButton = screen.getByRole('button', { name: /add/i });
+  await waitFor(() => expect(addButton).toBeEnabled());
+  await userEvent.click(addButton);
+  await waitFor(() => expect(onHide).toHaveBeenCalled());
   await waitFor(() => {
     const calls = fetchMock.callHistory.calls(postEndpoint);
     expect(calls).toHaveLength(1);
