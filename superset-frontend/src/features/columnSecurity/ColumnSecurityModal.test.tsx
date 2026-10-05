@@ -99,8 +99,24 @@ test('loads columns after selecting a dataset and submits runtime IDs', async ()
   await waitFor(() =>
     expect(fetchMock.callHistory.calls(datasetRolesEndpoint)).toHaveLength(1),
   );
-  await userEvent.click(await screen.findByText('field_test'));
-  await selectOption('don_vi', 'Allowed Columns');
+  await userEvent.click(
+    await screen.findByRole('option', { name: 'field_test' }),
+  );
+
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('option', { name: 'demo_dataset' }),
+    ).not.toBeInTheDocument(),
+  );
+  const columnsSelect = await screen.findByRole('combobox', {
+    name: 'Allowed Columns',
+  });
+  await waitFor(() => expect(columnsSelect).toBeEnabled());
+  await userEvent.click(columnsSelect);
+  await waitFor(() =>
+    expect(fetchMock.callHistory.calls(columnsEndpoint)).toHaveLength(1),
+  );
+  await userEvent.click(await screen.findByRole('option', { name: 'don_vi' }));
 
   expect(fetchMock.callHistory.calls(columnsEndpoint)).toHaveLength(1);
   await waitFor(() =>
