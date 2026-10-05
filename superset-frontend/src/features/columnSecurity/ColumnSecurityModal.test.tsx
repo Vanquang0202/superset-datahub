@@ -110,6 +110,7 @@ test('loads columns after selecting a dataset and submits runtime IDs', async ()
   await userEvent.click(
     await screen.findByRole('option', { name: 'field_test' }),
   );
+  await userEvent.keyboard('{Escape}');
 
   await waitFor(() =>
     expect(
@@ -125,6 +126,7 @@ test('loads columns after selecting a dataset and submits runtime IDs', async ()
     expect(fetchMock.callHistory.calls(columnsEndpoint)).toHaveLength(1),
   );
   await userEvent.click(await screen.findByRole('option', { name: 'don_vi' }));
+  await userEvent.keyboard('{Escape}');
 
   expect(fetchMock.callHistory.calls(columnsEndpoint)).toHaveLength(1);
   const addButton = screen.getByRole('button', { name: /add/i });
