@@ -20,7 +20,6 @@
 import fetchMock from 'fetch-mock';
 import userEvent from '@testing-library/user-event';
 import {
-  fireEvent,
   render,
   screen,
   selectOption,
@@ -81,6 +80,31 @@ const defaultProps: ColumnSecurityModalProps = {
   show: true,
 };
 
+const getSelectItemContainer = (select: HTMLElement) =>
+  select.parentElement?.parentElement?.getElementsByClassName(
+    'ant-select-selection-item',
+  );
+
+const getVisibleOption = (label: string) => {
+  const dropdowns = Array.from(
+    document.querySelectorAll<HTMLElement>('.rc-virtual-list'),
+  );
+  const dropdown = dropdowns.find(element => {
+    const container = element.closest('.ant-select-dropdown');
+    return (
+      container &&
+      !container.classList.contains('ant-select-dropdown-hidden') &&
+      within(element).queryByRole('option', { name: label })
+    );
+  });
+
+  if (!dropdown) {
+    throw new Error(`Unable to find visible option: ${label}`);
+  }
+
+  return within(dropdown).getByRole('option', { name: label });
+};
+
 test('renders the create policy form with dataset-dependent columns disabled', () => {
   render(<ColumnSecurityModal {...defaultProps} />, { useRedux: true });
 
@@ -108,13 +132,13 @@ test('loads columns after selecting a dataset and submits runtime IDs', async ()
   await waitFor(() =>
     expect(fetchMock.callHistory.calls(datasetRolesEndpoint)).toHaveLength(1),
   );
-  await userEvent.click(
-    await screen.findByRole('option', { name: 'field_test' }),
-  );
-  fireEvent.keyDown(document.activeElement as Element, {
-    key: 'Escape',
-    code: 'Escape',
+  await userEvent.click(getVisibleOption('field_test'));
+  await waitFor(() => {
+    const selectedItems = getSelectItemContainer(rolesSelect);
+    expect(selectedItems).toHaveLength(1);
+    expect(selectedItems?.[0]).toHaveTextContent('field_test');
   });
+  await userEvent.click(rolesSelect);
 
   await waitFor(() =>
     expect(
@@ -129,11 +153,13 @@ test('loads columns after selecting a dataset and submits runtime IDs', async ()
   await waitFor(() =>
     expect(fetchMock.callHistory.calls(columnsEndpoint)).toHaveLength(1),
   );
-  await userEvent.click(await screen.findByRole('option', { name: 'don_vi' }));
-  fireEvent.keyDown(document.activeElement as Element, {
-    key: 'Escape',
-    code: 'Escape',
+  await userEvent.click(getVisibleOption('don_vi'));
+  await waitFor(() => {
+    const selectedItems = getSelectItemContainer(columnsSelect);
+    expect(selectedItems).toHaveLength(1);
+    expect(selectedItems?.[0]).toHaveTextContent('don_vi');
   });
+  await userEvent.click(columnsSelect);
 
   expect(fetchMock.callHistory.calls(columnsEndpoint)).toHaveLength(1);
   const addButton = screen.getByRole('button', { name: /add/i });
