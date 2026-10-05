@@ -139,6 +139,13 @@ const RowLevelSecurityList = lazy(
     ),
 );
 
+const ColumnSecurityList = lazy(
+  () =>
+    import(
+      /* webpackChunkName: "ColumnSecurityList" */ 'src/pages/ColumnSecurityList'
+    ),
+);
+
 const TaskList = lazy(
   () => import(/* webpackChunkName: "TaskList" */ 'src/pages/TaskList'),
 );
@@ -301,6 +308,10 @@ export const routes: Routes = [
   {
     path: '/rowlevelsecurity/list',
     Component: RowLevelSecurityList,
+  },
+  {
+    path: '/columnsecurity/list',
+    Component: ColumnSecurityList,
   },
   {
     path: '/tasks/list/',

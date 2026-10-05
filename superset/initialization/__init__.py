@@ -157,6 +157,7 @@ class SupersetAppInitializer:  # pylint: disable=too-many-public-methods
         from superset.cachekeys.api import CacheRestApi
         from superset.charts.api import ChartRestApi
         from superset.charts.data.api import ChartDataRestApi
+        from superset.column_security.api import ColumnSecurityRestApi
         from superset.css_templates.api import CssTemplateRestApi
         from superset.dashboards.api import DashboardRestApi
         from superset.dashboards.filter_state.api import DashboardFilterStateRestApi
@@ -213,6 +214,7 @@ class SupersetAppInitializer:  # pylint: disable=too-many-public-methods
             TabStateView,
         )
         from superset.views.sqla import (
+            ColumnSecurityView,
             RowLevelSecurityView,
             TableModelView,
         )
@@ -245,6 +247,7 @@ class SupersetAppInitializer:  # pylint: disable=too-many-public-methods
         appbuilder.add_api(ChartRestApi)
         appbuilder.add_api(ChartDataRestApi)
         appbuilder.add_api(CssTemplateRestApi)
+        appbuilder.add_api(ColumnSecurityRestApi)
         appbuilder.add_api(ThemeRestApi)
         appbuilder.add_api(CurrentUserRestApi)
         appbuilder.add_api(UserRestApi)
@@ -534,6 +537,15 @@ class SupersetAppInitializer:  # pylint: disable=too-many-public-methods
             category="Security",
             category_label=_("Security"),
             icon="fa-lock",
+        )
+        appbuilder.add_view(
+            ColumnSecurityView,
+            "Column Level Security",
+            href="ColumnSecurityView.list",
+            label=_("Column Level Security"),
+            category="Security",
+            category_label=_("Security"),
+            icon="fa-columns",
         )
 
     def init_core_dependencies(self) -> None:

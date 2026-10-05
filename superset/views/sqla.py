@@ -38,6 +38,19 @@ class RowLevelSecurityView(BaseSupersetView):
         return super().render_app_template()
 
 
+class ColumnSecurityView(BaseSupersetView):
+    """Admin page for Column Level Security policies."""
+
+    route_base = "/columnsecurity"
+    class_permission_name = "Column Level Security"
+
+    @expose("/list/")
+    @has_access
+    @permission_name("read")
+    def list(self) -> FlaskResponse:
+        return super().render_app_template()
+
+
 class TableModelView(BaseSupersetView):
     class_permission_name = "Dataset"
     method_permission_name = MODEL_VIEW_RW_METHOD_PERMISSION_MAP
