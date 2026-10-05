@@ -24,6 +24,7 @@ import {
   screen,
   selectOption,
   waitFor,
+  within,
 } from 'spec/helpers/testing-library';
 import ColumnSecurityModal, {
   type ColumnSecurityModalProps,
@@ -92,7 +93,10 @@ test('loads columns after selecting a dataset and submits runtime IDs', async ()
     useRedux: true,
   });
 
-  const name = screen.getByLabelText('Policy Name');
+  const policyNameField =
+    screen.getByText('Policy Name').parentElement?.parentElement;
+  expect(policyNameField).not.toBeNull();
+  const name = within(policyNameField as HTMLElement).getByRole('textbox');
   await userEvent.type(name, 'policy');
   await waitFor(() => expect(name).toHaveValue('policy'));
   await selectOption('demo_dataset', 'Dataset');
