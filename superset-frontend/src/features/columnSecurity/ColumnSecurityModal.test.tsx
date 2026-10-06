@@ -19,13 +19,7 @@
 
 import fetchMock from 'fetch-mock';
 import userEvent from '@testing-library/user-event';
-import {
-  render,
-  screen,
-  selectOption,
-  waitFor,
-  within,
-} from 'spec/helpers/testing-library';
+import { render, screen, waitFor } from 'spec/helpers/testing-library';
 import ColumnSecurityModal, {
   type ColumnSecurityModalProps,
 } from './ColumnSecurityModal';
