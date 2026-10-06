@@ -58,6 +58,8 @@ let badgesDirCreated = false;
 // Retry configuration
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1000;
+const SLACK_BADGE_URL =
+  'https://img.shields.io/badge/slack-join-orange.svg';
 
 /**
  * Sleep for a given number of milliseconds
@@ -206,6 +208,14 @@ async function downloadBadge(url, staticDir) {
       badgeCache.set(url, webPath);
       return webPath;
     } catch (error) {
+      if (url === SLACK_BADGE_URL) {
+        console.warn(
+          `[remark-localize-badges] Failed to localize Slack badge; using remote URL: ${url}`,
+        );
+        badgeCache.set(url, url);
+        return url;
+      }
+
       // Fail the build on badge download failure
       throw new Error(
         `[remark-localize-badges] Failed to download badge: ${url}\n` +
