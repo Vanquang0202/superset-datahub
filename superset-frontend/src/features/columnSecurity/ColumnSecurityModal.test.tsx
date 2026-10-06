@@ -85,26 +85,6 @@ const getSelectItemContainer = (select: HTMLElement) =>
     'ant-select-selection-item',
   );
 
-const getVisibleOption = (label: string) => {
-  const dropdowns = Array.from(
-    document.querySelectorAll<HTMLElement>('.rc-virtual-list'),
-  );
-  const dropdown = dropdowns.find(element => {
-    const container = element.closest('.ant-select-dropdown');
-    return (
-      container &&
-      !container.classList.contains('ant-select-dropdown-hidden') &&
-      within(element).queryByRole('option', { name: label })
-    );
-  });
-
-  if (!dropdown) {
-    throw new Error(`Unable to find visible option: ${label}`);
-  }
-
-  return within(dropdown).getByRole('option', { name: label });
-};
-
 test('renders the create policy form with dataset-dependent columns disabled', () => {
   render(<ColumnSecurityModal {...defaultProps} />, { useRedux: true });
 
@@ -128,11 +108,10 @@ test('loads columns after selecting a dataset and submits runtime IDs', async ()
 
   const rolesSelect = await screen.findByRole('combobox', { name: 'Roles' });
   await waitFor(() => expect(rolesSelect).toBeEnabled());
-  await userEvent.click(rolesSelect);
+  await selectOption('field_test', 'Roles');
   await waitFor(() =>
     expect(fetchMock.callHistory.calls(datasetRolesEndpoint)).toHaveLength(1),
   );
-  await userEvent.click(getVisibleOption('field_test'));
   await waitFor(() => {
     const selectedItems = getSelectItemContainer(rolesSelect);
     expect(selectedItems).toHaveLength(1);
@@ -149,11 +128,10 @@ test('loads columns after selecting a dataset and submits runtime IDs', async ()
     name: 'Allowed Columns',
   });
   await waitFor(() => expect(columnsSelect).toBeEnabled());
-  await userEvent.click(columnsSelect);
+  await selectOption('don_vi', 'Allowed Columns');
   await waitFor(() =>
     expect(fetchMock.callHistory.calls(columnsEndpoint)).toHaveLength(1),
   );
-  await userEvent.click(getVisibleOption('don_vi'));
   await waitFor(() => {
     const selectedItems = getSelectItemContainer(columnsSelect);
     expect(selectedItems).toHaveLength(1);
