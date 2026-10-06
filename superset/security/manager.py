@@ -23,7 +23,7 @@ import time
 from collections import defaultdict
 from typing import Any, Callable, cast, NamedTuple, Optional, TYPE_CHECKING
 
-from flask import current_app, Flask, g, Request
+from flask import current_app, Flask, g, has_app_context, Request
 from flask_appbuilder import Model
 from flask_appbuilder.models.filters import BaseFilter
 from flask_appbuilder.security.sqla.apis import RoleApi, UserApi
@@ -2688,6 +2688,62 @@ class SupersetSecurityManager(  # pylint: disable=too-many-public-methods
                 or str(rule.get("dataset")) == str(dataset.data["id"])
             ]
         return []
+
+    def get_allowed_columns(self, table: "SqlaTable") -> set[str] | None:
+        """
+        Resolve column access policies for the current user and dataset.
+
+        :param table: The dataset to check against
+        :returns: None when no policy applies, otherwise the union of allowed
+            column names. An applicable policy without columns returns an empty set.
+        """
+        if not has_app_context():
+            return None
+        user = getattr(g, "user", None)
+        if user is None or not user.is_authenticated:
+            return None
+
+        user_roles = [role.id for role in self.get_user_roles(g.user)]
+        if not user_roles:
+            return None
+
+        # pylint: disable=import-outside-toplevel
+        from superset.connectors.sqla.models import (
+            ColumnSecurityPolicy,
+            ColumnSecurityPolicyColumns,
+            ColumnSecurityPolicyRoles,
+            TableColumn,
+        )
+
+        rows = (
+            self.session.query(ColumnSecurityPolicy.id, TableColumn.column_name)
+            .select_from(ColumnSecurityPolicy)
+            .join(
+                ColumnSecurityPolicyRoles,
+                ColumnSecurityPolicyRoles.c.policy_id == ColumnSecurityPolicy.id,
+            )
+            # Preserve policies without columns to distinguish deny-all from no policy.
+            .outerjoin(
+                ColumnSecurityPolicyColumns,
+                ColumnSecurityPolicyColumns.c.policy_id == ColumnSecurityPolicy.id,
+            )
+            .outerjoin(
+                TableColumn,
+                and_(
+                    TableColumn.id == ColumnSecurityPolicyColumns.c.column_id,
+                    TableColumn.table_id == table.id,
+                ),
+            )
+            .filter(
+                ColumnSecurityPolicy.table_id == table.id,
+                ColumnSecurityPolicy.enabled.is_(True),
+                ColumnSecurityPolicyRoles.c.role_id.in_(user_roles),
+            )
+            .all()
+        )
+        if not rows:
+            return None
+        return {column_name for _, column_name in rows if column_name is not None}
 
     def get_rls_filters(self, table: "BaseDatasource | Explorable") -> list[SqlaQuery]:
         """

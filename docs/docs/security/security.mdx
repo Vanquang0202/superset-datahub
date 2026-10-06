@@ -433,6 +433,33 @@ TALISMAN_CONFIG = {
 For more information on setting up Talisman, please refer to
 https://superset.apache.org/docs/configuration/networking-settings/#changing-flask-talisman-csp.
 
+### Saved raw tables with custom column-level security
+
+For the custom column-level security feature, saved Table charts in raw records
+mode omit forbidden physical display columns when submitted to `POST /api/v1/chart/data`.
+The request must include `form_data.slice_id`; users without an applicable policy
+retain their original selection. The request's `all_columns` selection is kept
+consistent without changing the saved chart or dataset metadata. Forbidden
+physical-column `TEMPORAL_RANGE` filters whose value is exactly `No filter` (or
+its localized equivalent) are also omitted from query filters and SIMPLE WHERE
+`adhoc_filters`. Active date ranges and other filters are retained for validation.
+
+Aggregate tables, calculated columns, SQL expressions, metrics, filters, time
+columns, and sorting references still undergo normal validation and can cause the
+chart to fail if they reference forbidden columns. Unsaved requests are unchanged.
+An empty allowed-column set produces an empty physical display-column selection;
+this does not guarantee that a query with no selectable columns can render.
+
+Dashboard charts rejected for a forbidden CLS column display "You do not have
+permission to view this chart." Other charts continue to render, and unrelated
+query failures retain their normal error details. The chart-data API still rejects
+forbidden queries and includes `COLUMN_SECURITY_ACCESS_ERROR` in its structured
+error response; the dashboard uses this code rather than matching error text.
+
+Explore displays a readable permission message when saving or overwriting a chart
+returns HTTP 403. Other save failures display their available error details. These
+messages do not change chart creation or update permissions.
+
 ### Reporting Security Vulnerabilities
 
 Apache Software Foundation takes a rigorous standpoint in annihilating the security issues in its
