@@ -131,9 +131,8 @@ test('loads columns after selecting a dataset and submits runtime IDs', async ()
   await waitFor(() =>
     expect(fetchMock.callHistory.calls(datasetRolesEndpoint)).toHaveLength(1),
   );
-  const rolesSelect = getCurrentSelect('Roles');
   await waitFor(() => {
-    const selectedItems = getSelectItemContainer(rolesSelect);
+    const selectedItems = getSelectItemContainer(getCurrentSelect('Roles'));
     expect(selectedItems).toHaveLength(1);
     expect(selectedItems?.[0]).toHaveTextContent('field_test');
   });
@@ -145,13 +144,14 @@ test('loads columns after selecting a dataset and submits runtime IDs', async ()
   await waitFor(() =>
     expect(fetchMock.callHistory.calls(columnsEndpoint)).toHaveLength(1),
   );
-  const columnsSelect = getCurrentSelect('Allowed Columns');
   await waitFor(() => {
-    const selectedItems = getSelectItemContainer(columnsSelect);
+    const selectedItems = getSelectItemContainer(
+      getCurrentSelect('Allowed Columns'),
+    );
     expect(selectedItems).toHaveLength(1);
     expect(selectedItems?.[0]).toHaveTextContent('don_vi');
   });
-  await userEvent.click(columnsSelect);
+  await userEvent.click(getCurrentSelect('Allowed Columns'));
 
   expect(fetchMock.callHistory.calls(columnsEndpoint)).toHaveLength(1);
   const addButton = screen.getByRole('button', { name: /add/i });
