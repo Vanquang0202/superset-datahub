@@ -85,18 +85,21 @@ const getSelectItemContainer = (select: HTMLElement) =>
     'ant-select-selection-item',
   );
 
-const selectOptionFromControl = async (
-  select: HTMLElement,
-  option: string,
-) => {
+const getSelectField = (label: string) => {
+  const labelElement = screen.getByText(label, { selector: 'label' });
+  const field = labelElement.parentElement;
+  expect(field).not.toBeNull();
+  return field as HTMLElement;
+};
+
+const getCurrentSelect = (label: string) =>
+  within(getSelectField(label)).getByRole('combobox', { name: label });
+
+const selectOptionFromField = async (label: string, option: string) => {
+  const field = getSelectField(label);
+  const select = within(field).getByRole('combobox', { name: label });
   await userEvent.click(select);
-  const listbox = await waitFor(() => {
-    const listboxId = select.getAttribute('aria-controls');
-    expect(listboxId).toBeTruthy();
-    const element = document.getElementById(listboxId as string);
-    expect(element).toBeInTheDocument();
-    return element as HTMLElement;
-  });
+  const listbox = await within(field).findByRole('listbox');
   await userEvent.click(
     await within(listbox).findByRole('option', { name: option }),
   );
@@ -123,32 +126,26 @@ test('loads columns after selecting a dataset and submits runtime IDs', async ()
   await waitFor(() => expect(name).toHaveValue('policy'));
   await selectOption('demo_dataset', 'Dataset');
 
-  const rolesSelect = await screen.findByRole('combobox', { name: 'Roles' });
-  await waitFor(() => expect(rolesSelect).toBeEnabled());
-  await selectOptionFromControl(rolesSelect, 'field_test');
+  await waitFor(() => expect(getCurrentSelect('Roles')).toBeEnabled());
+  await selectOptionFromField('Roles', 'field_test');
   await waitFor(() =>
     expect(fetchMock.callHistory.calls(datasetRolesEndpoint)).toHaveLength(1),
   );
+  const rolesSelect = getCurrentSelect('Roles');
   await waitFor(() => {
     const selectedItems = getSelectItemContainer(rolesSelect);
     expect(selectedItems).toHaveLength(1);
     expect(selectedItems?.[0]).toHaveTextContent('field_test');
   });
-  await userEvent.click(rolesSelect);
 
   await waitFor(() =>
-    expect(
-      screen.queryByRole('option', { name: 'demo_dataset' }),
-    ).not.toBeInTheDocument(),
+    expect(getCurrentSelect('Allowed Columns')).toBeEnabled(),
   );
-  const columnsSelect = await screen.findByRole('combobox', {
-    name: 'Allowed Columns',
-  });
-  await waitFor(() => expect(columnsSelect).toBeEnabled());
-  await selectOptionFromControl(columnsSelect, 'don_vi');
+  await selectOptionFromField('Allowed Columns', 'don_vi');
   await waitFor(() =>
     expect(fetchMock.callHistory.calls(columnsEndpoint)).toHaveLength(1),
   );
+  const columnsSelect = getCurrentSelect('Allowed Columns');
   await waitFor(() => {
     const selectedItems = getSelectItemContainer(columnsSelect);
     expect(selectedItems).toHaveLength(1);
