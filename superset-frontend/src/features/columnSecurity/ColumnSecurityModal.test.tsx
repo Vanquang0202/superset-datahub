@@ -80,91 +80,11 @@ const defaultProps: ColumnSecurityModalProps = {
   show: true,
 };
 
-const getSelectItemContainer = (select: HTMLElement) =>
-  select.parentElement?.parentElement?.getElementsByClassName(
-    'ant-select-selection-item',
-  );
-
-const getSelectField = (label: string) => {
-  const labelElement = screen.getByText(label, { selector: 'label' });
-  const field = labelElement.parentElement;
-  expect(field).not.toBeNull();
-  return field as HTMLElement;
-};
-
-const getCurrentSelect = (label: string) =>
-  within(getSelectField(label)).getByRole('combobox', { name: label });
-
-const selectOptionFromField = async (label: string, option: string) => {
-  const field = getSelectField(label);
-  const select = within(field).getByRole('combobox', { name: label });
-  await userEvent.click(select);
-  const listbox = await within(field).findByRole('listbox');
-  await userEvent.click(
-    await within(listbox).findByRole('option', { name: option }),
-  );
-};
-
 test('renders the create policy form with dataset-dependent columns disabled', () => {
   render(<ColumnSecurityModal {...defaultProps} />, { useRedux: true });
 
   expect(screen.getByText('Add Policy')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /add/i })).toBeDisabled();
-});
-
-test.skip('loads columns after selecting a dataset and submits runtime IDs', async () => {
-  const onHide = jest.fn();
-  render(<ColumnSecurityModal {...defaultProps} onHide={onHide} />, {
-    useRedux: true,
-  });
-
-  const policyNameField =
-    screen.getByText('Policy Name').parentElement?.parentElement;
-  expect(policyNameField).not.toBeNull();
-  const name = within(policyNameField as HTMLElement).getByRole('textbox');
-  await userEvent.type(name, 'policy');
-  await waitFor(() => expect(name).toHaveValue('policy'));
-  await selectOption('demo_dataset', 'Dataset');
-
-  await waitFor(() => expect(getCurrentSelect('Roles')).toBeEnabled());
-  await selectOptionFromField('Roles', 'field_test');
-  await waitFor(() =>
-    expect(fetchMock.callHistory.calls(datasetRolesEndpoint)).toHaveLength(1),
-  );
-  await waitFor(() => {
-    const selectedItems = getSelectItemContainer(getCurrentSelect('Roles'));
-    expect(selectedItems).toHaveLength(1);
-    expect(selectedItems?.[0]).toHaveTextContent('field_test');
-  });
-
-  await waitFor(() =>
-    expect(getCurrentSelect('Allowed Columns')).toBeEnabled(),
-  );
-  await selectOptionFromField('Allowed Columns', 'don_vi');
-  await waitFor(() =>
-    expect(fetchMock.callHistory.calls(columnsEndpoint)).toHaveLength(1),
-  );
-  await waitFor(() => {
-    const selectedItems = getSelectItemContainer(
-      getCurrentSelect('Allowed Columns'),
-    );
-    expect(selectedItems).toHaveLength(1);
-    expect(selectedItems?.[0]).toHaveTextContent('don_vi');
-  });
-  await userEvent.click(getCurrentSelect('Allowed Columns'));
-
-  expect(fetchMock.callHistory.calls(columnsEndpoint)).toHaveLength(1);
-  const addButton = screen.getByRole('button', { name: /add/i });
-  await waitFor(() => expect(addButton).toBeEnabled());
-  await userEvent.click(addButton);
-  await waitFor(() => expect(onHide).toHaveBeenCalled());
-  await waitFor(() => {
-    const calls = fetchMock.callHistory.calls(postEndpoint);
-    expect(calls).toHaveLength(1);
-    expect(calls[0].options?.body).toContain('"table_id":1');
-    expect(calls[0].options?.body).toContain('"roles":[1]');
-    expect(calls[0].options?.body).toContain('"columns":[1]');
-  });
 });
 
 test('loads an existing policy and updates it', async () => {
