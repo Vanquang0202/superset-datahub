@@ -85,6 +85,23 @@ const getSelectItemContainer = (select: HTMLElement) =>
     'ant-select-selection-item',
   );
 
+const selectOptionFromControl = async (
+  select: HTMLElement,
+  option: string,
+) => {
+  await userEvent.click(select);
+  const listbox = await waitFor(() => {
+    const listboxId = select.getAttribute('aria-controls');
+    expect(listboxId).toBeTruthy();
+    const element = document.getElementById(listboxId as string);
+    expect(element).toBeInTheDocument();
+    return element as HTMLElement;
+  });
+  await userEvent.click(
+    await within(listbox).findByRole('option', { name: option }),
+  );
+};
+
 test('renders the create policy form with dataset-dependent columns disabled', () => {
   render(<ColumnSecurityModal {...defaultProps} />, { useRedux: true });
 
@@ -108,7 +125,7 @@ test('loads columns after selecting a dataset and submits runtime IDs', async ()
 
   const rolesSelect = await screen.findByRole('combobox', { name: 'Roles' });
   await waitFor(() => expect(rolesSelect).toBeEnabled());
-  await selectOption('field_test', 'Roles');
+  await selectOptionFromControl(rolesSelect, 'field_test');
   await waitFor(() =>
     expect(fetchMock.callHistory.calls(datasetRolesEndpoint)).toHaveLength(1),
   );
@@ -128,7 +145,7 @@ test('loads columns after selecting a dataset and submits runtime IDs', async ()
     name: 'Allowed Columns',
   });
   await waitFor(() => expect(columnsSelect).toBeEnabled());
-  await selectOption('don_vi', 'Allowed Columns');
+  await selectOptionFromControl(columnsSelect, 'don_vi');
   await waitFor(() =>
     expect(fetchMock.callHistory.calls(columnsEndpoint)).toHaveLength(1),
   );
